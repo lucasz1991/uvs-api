@@ -167,9 +167,6 @@
                             <div class="text-sm font-medium">
                                 {{ $user->name }}
                             </div>
-                            <div class="text-xs text-gray-400">
-                                {{ $user->customer->first_name ?? 'Vorname' }} {{ $user->customer->last_name ?? 'Nachname' }}
-                            </div>
                         </div>                    
                     </div>
                 </div>
@@ -282,5 +279,4 @@
     {{ $users->links() }}
     </div>
     @endpersist
-    <livewire:admin.users.messages.message-form />
 </div>

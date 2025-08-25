@@ -1,4 +1,7 @@
-<div  x-data="{ selectedTab: '' }">
+<div 
+    x-data="{ selectedTab: $persist('userApiKey').using(sessionStorage) }" 
+    class="space-y-4"
+>
   <!-- Header-Bild -->
   <div class="rounded-t-lg h-32 overflow-hidden bg-gray-200 relative">
         <!-- Status Badge (links oben) -->
@@ -33,26 +36,13 @@
             <svg class="w-6 h-6 fill-current text-blue-900" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
                 <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
             </svg>
-            <div class="text-center">{{ $user->followers()->count() }} Follower</div>
+            <div class="text-center">0 Keys</div>
         </li>
         <li class="flex flex-col items-center justify-around flex-1">
             <svg class="w-6 h-6 fill-current text-blue-900" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
                 <path d="M7 8a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0 1c2.15 0 4.2.4 6.1 1.09L12 16h-1.25L10 20H4l-.75-4H2L.9 10.09A17.93 17.93 0 0 1 7 9zm8.31.17c1.32.18 2.59.48 3.8.92L18 16h-1.25L16 20h-3.96l.37-2h1.25l1.65-8.83zM13 0a4 4 0 1 1-1.33 7.76 5.96 5.96 0 0 0 0-7.52C12.1.1 12.53 0 13 0z" />
             </svg>
-            <div class="text-center">{{ $user->followedCustomers()->count() }} gefolgt</div>
-        </li>
-        <li class="flex flex-col items-center justify-around flex-1">
-            <svg class="w-6 h-6 fill-current text-blue-900" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                <path d="M9 12H1v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6h-8v2H9v-2zm0-1H0V5c0-1.1.9-2 2-2h4V2a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1h4a2 2 0 0 1 2 2v6h-9V9H9v2zm3-8V2H8v1h4z" />
-            </svg>
-            <div class="text-center">0 Produkte geliked</div>
-        </li>
-        <li class="flex flex-col items-center justify-around flex-1">
-            <svg class="w-6 h-6  text-blue-900" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
-            <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 10h9.231M6 14h9.231M18 5.086A5.95 5.95 0 0 0 14.615 4c-3.738 0-6.769 3.582-6.769 8s3.031 8 6.769 8A5.94 5.94 0 0 0 18 18.916"/>
-            </svg>
-
-            <div class="text-center">0 € Einkünfte</div>
+            <div class="text-center">0 Aktivitäten</div>
         </li>
     </ul>
 
@@ -103,6 +93,16 @@
     </div>
 <!-- Tab-Menü -->
 <ul class="flex w-full text-sm font-medium text-center text-gray-500 bg-gray-100 rounded-lg shadow divide-gray-200">
+            <!-- Details Tab -->
+        <li class="w-full">
+            <button 
+                @click="selectedTab = 'userApiKey'" 
+                :class="{ 'text-blue-600 bg-gray-100 border-b-2 border-blue-600': selectedTab === 'userApiKey' }" 
+                class="w-full p-4 transition-all duration-200 bg-gray-100 hover:bg-blue-100 hover:text-blue-600 focus:outline-none"
+            >
+                Api-Schlüssel
+            </button>
+        </li>
         <!-- Details Tab -->
         <li class="w-full">
             <button 
@@ -117,11 +117,11 @@
         <!-- Buchungen Tab -->
         <li class="w-full border-l border-gray-200">
             <button 
-                @click="selectedTab = 'shelfRentals'" 
-                :class="{ 'text-blue-600 bg-white border-b-2 border-blue-600': selectedTab === 'shelfRentals' }" 
+                @click="selectedTab = 'activities'" 
+                :class="{ 'text-blue-600 bg-white border-b-2 border-blue-600': selectedTab === 'activities' }" 
                 class="w-full p-4 transition-all duration-200 bg-gray-100 hover:bg-blue-100 hover:text-blue-600 focus:outline-none"
             >
-                Buchungen
+                Aktivitäten
             </button>
         </li>
 
@@ -129,6 +129,13 @@
 
     <!-- Benutzer- und Kundendetails -->
     <div>
+        <div  x-show="selectedTab === 'userApiKey'" x-collapse  x-cloak>
+            <div class="w-full bg-gray-100 shadow rounded-lg p-6 mt-4">
+                  <livewire:users.ap-management.user-api-keys-panel :user-id="$user->id" lazy/>
+                  
+
+            </div>
+        </div>
         <div  x-show="selectedTab === 'userDetails'" x-collapse  x-cloak>
             <div class="w-full bg-gray-100 shadow rounded-lg p-6 mt-4">
                 <h2 class="text-2xl font-bold text-gray-800 mb-4">Benutzerprofil</h2>
@@ -161,56 +168,11 @@
                     <div>
                     </div>
                 </div>
-
-                <!-- Kundendetails -->
-                @if($user->customer)
-                    <div>
-                        <h2 class="text-2xl font-bold text-gray-800 mb-4">Kundendetails</h2>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                            <div>
-                                <h3 class="text-lg font-semibold text-gray-700">Persönliche Informationen</h3>
-                                <p><strong>Vorname:</strong> {{ $user->customer->first_name }}</p>
-                                <p><strong>Nachname:</strong> {{ $user->customer->last_name }}</p>
-                                <p><strong>Telefonnummer:</strong> {{ $user->customer->phone_number }}</p>
-                            </div>
-
-                            <div>
-                                <h3 class="text-lg font-semibold text-gray-700">Adresse</h3>
-                                <p><strong>Straße:</strong> {{ $user->customer->street }}</p>
-                                <p><strong>Stadt:</strong> {{ $user->customer->city }}</p>
-                                <p><strong>Bundesland:</strong> {{ $user->customer->state }}</p>
-                                <p><strong>Postleitzahl:</strong> {{ $user->customer->postal_code }}</p>
-                                <p><strong>Land:</strong> {{ $user->customer->country }}</p>
-                            </div>
-                        </div>
-                    </div>
-                @else
-                    <p class="text-gray-500">Keine Kundendetails verfügbar.</p>
-                @endif
             </div>
         </div>
-        <div  x-show="selectedTab === 'shelfRentals'" x-collapse  x-cloak>
-            <div class="w-full bg-gray-100 shadow rounded-lg p-6 mt-4">
-                <h2 class="text-2xl font-bold text-gray-800 mb-4">Buchungen</h2>
-                <div wire:loading>
-                    <div class="flex justify-center items-center h-20">
-                        <svg class="animate-spin h-5 w-5 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-                        </svg>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div  x-show="selectedTab === 'logs'" x-collapse  x-cloak>
+        <div  x-show="selectedTab === 'activities'" x-collapse  x-cloak>
             <div class="w-full bg-gray-100 shadow rounded-lg p-6 mt-4">
                 <h2 class="text-2xl font-bold text-gray-800 mb-4">Aktivitäten</h2>
-
-            </div>
-        </div>
-        <div  x-show="selectedTab === 'payouts'" x-collapse  x-cloak>
-            <div class="w-full bg-gray-100 shadow rounded-lg p-6 mt-4">
-                <h2 class="text-2xl font-bold text-gray-800 mb-4">Auszahlungen</h2>
 
             </div>
         </div>

@@ -10,8 +10,6 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Jetstream\HasProfilePhoto;
 use Laravel\Jetstream\HasTeams;
 use Laravel\Sanctum\HasApiTokens;
-use App\Models\Message;
-use App\Models\Customer;
 use App\Notifications\CustomVerifyEmail;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -67,39 +65,7 @@ class User extends Authenticatable
         'profile_photo_url',
     ];
 
-    public function customer()
-    {
-        return $this->hasOne(Customer::class, 'user_id');
-    }
-    
-    public function receivedMessages()
-    {
-        return  $this->hasMany(Message::class, 'to_user')->where('to_user', $this->id);
-    }
-    public function receivedUnreadMessages()
-    {   
-        $unreadmessages = $this->receivedMessages()->where('status',1);
-        return $unreadmessages;
-    }
 
-        /**
-     * Sende eine Nachricht an einen anderen Benutzer.
-     *
-     * @param int $toUserId
-     * @param string $subject
-     * @param string $message
-     * @return void
-     */
-    public function sendMessage($toUserId, $subject, $message)
-    {
-        Message::create([
-            'subject' => $subject,
-            'message' => $message,
-            'from_user' => $this->id, 
-            'to_user' => $toUserId,
-            'status' => '1',
-        ]);
-    }
 
     public function isAdmin(): bool
     {
@@ -111,25 +77,7 @@ class User extends Authenticatable
         return $this->status;
     }
 
-    public function followers()
-    {
-        return $this->belongsToMany(
-            User::class, // Der Typ der Benutzer, die folgen
-            'customer_followers', // Pivot-Tabelle
-            'customer_id', // Spalte in der Pivot-Tabelle, die den aktuellen Benutzer repräsentiert
-            'follower_id' // Spalte in der Pivot-Tabelle, die die Follower repräsentiert
-        )->withPivot('date')->withTimestamps(); // Zusätzliche Pivot-Daten
-    }
 
-    public function followedCustomers()
-    {
-        return $this->belongsToMany(
-            User::class, // Der Typ der Benutzer, denen gefolgt wird
-            'customer_followers', // Pivot-Tabelle
-            'follower_id', // Spalte in der Pivot-Tabelle, die den aktuellen Benutzer als Follower repräsentiert
-            'customer_id' // Spalte in der Pivot-Tabelle, die die Benutzer repräsentiert, denen gefolgt wird
-        )->withPivot('date')->withTimestamps(); // Zusätzliche Pivot-Daten
-    }
 
     
     public function sendEmailVerificationNotification()
