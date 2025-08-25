@@ -26,13 +26,6 @@
                 >
                     Mail's
                 </button>
-                <button 
-                    class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm"
-                    :class="{ 'border-blue-500 text-blue-600': activeTab === 'api', 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300': activeTab !== 'api' }"
-                    @click="activeTab = 'api'"
-                >
-                    Api's
-                </button>
             </nav>
         </div>
         <!-- Tab Content -->
@@ -64,14 +57,6 @@
                                 Konfiguriere die Haupt-E-Mail-Adresse für Systemnachrichten und lege fest, wann und wie E-Mails gesendet werden sollen.
                             </p>
                             <a  @click="activeTab = 'mails'" class="text-blue-500 mt-3 inline-block font-medium cursor-pointer">E-Mail-Konfiguration →</a>
-                        </div>
-                        <!-- Abschnitt: API -->
-                        <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                            <h3 class="text-lg font-semibold text-gray-700">API-Integrationen</h3>
-                            <p class="text-sm text-gray-600 mt-2">
-                                Verwalte API-Schlüssel und integriere Drittanbieter-Dienste, um die Funktionalität deiner Plattform zu erweitern.
-                            </p>
-                            <a @click="activeTab = 'api'" class="text-blue-500 mt-3 inline-block font-medium cursor-pointer">API-Einstellungen →</a>
                         </div>
                     </div>
                     <div class="mt-6">
@@ -188,84 +173,7 @@
                         </x-slot>
                     </x-settings-collapse>
                 </div>
-                <!-- Api Tab -->
-                <div x-show="activeTab === 'api'" x-cloak class="space-y-10" x-collapse.duration.400ms>
-                    <h2 class="text-2xl font-semibold">API Einstellungen</h2>
-                    <!-- Kassen-API -->
-                    <x-settings-collapse>
-                        <x-slot name="trigger">
-                            Base Api
-                        </x-slot>
-                        <x-slot name="content">
-                            
-                            <!-- API URL Eingabe für Kassen-API -->
-                            <div class="mb-4">
-                                <label for="base_api_url" class="block text-sm font-medium text-gray-700">Base-API URL</label>
-                                <input 
-                                    type="url" 
-                                    id="base_api_url" 
-                                    wire:model="apiSettings.base_api_url" 
-                                    class="mt-1 p-2 block w-full border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" 
-                                    required
-                                >
-                                @error('apiSettings.base_api_url')
-                                    <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-                            <!-- API Key Eingabe für Kassen-API -->
-                            <div class="mb-4">
-                                <label for="base_api_key" class="block text-sm font-medium text-gray-700">Base-API Schlüssel</label>
-                                <input 
-                                    type="text" 
-                                    id="base_api_key" 
-                                    wire:model="apiSettings.base_api_key" 
-                                    class="mt-1 p-2 block w-full border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" 
-                                    required
-                                >
-                                @error('apiSettings.base_api_key')
-                                    <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-                            <div>
-                                <x-action-message class="me-3" on="saveApiSettings">
-                                    {{ __('Gespeichert.') }}
-                                </x-action-message>
-                                <!-- Speichern Button -->
-                                <button 
-                                    wire:click="saveApiSettings" 
-                                    class="bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600"
-                                >
-                                    speichern
-                                </button>
-                            </div>
-                        </x-slot>
-                    </x-settings-collapse>
-                    <!-- API-Keys Verwaltung -->
-                    <x-settings-collapse>
-                        <x-slot name="trigger">API-Schlüssel verwalten</x-slot>
-                        <x-slot name="content">
-                            <div class="mb-4">
-                                <x-button 
-                                    wire:click="generateApiKey" 
-                                    class="bg-blue-500 text-white py-1 px-2 rounded hover:bg-blue-600">
-                                    Neuen API-Schlüssel generieren
-                                </x-button>
-                            </div>
-                            <ul>
-                                @foreach ($apiKeys as $key => $value)
-                                    <li class="flex items-center justify-between mb-2 bg-white  px-2 py-1 rounded">
-                                        <span class="text-sm font-mono">{{ $value }}</span>
-                                        <button 
-                                            wire:click="deleteApiKey('{{ $key }}')" 
-                                            class="text-red-500 hover:underline">
-                                            Löschen
-                                        </button>
-                                    </li>
-                                @endforeach
-                            </ul>
-                        </x-slot>
-                    </x-settings-collapse>
-                </div>
+                
             </div>
         </div>
 </div>

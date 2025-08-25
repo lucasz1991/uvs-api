@@ -39,13 +39,9 @@ class ApiKeyFormModal extends Component
 
     public function mount(): void
     {
-        // Variante A: aus Config (z. B. config/api.php ['abilities' => [...]])
         $this->availableAbilities = array_values(config('api.abilities', [
-            'users.read', 'users.write', 'orders.read', 'orders.write', 'inventory.read', 'inventory.write'
+            'participants.store', 'participants.read'
         ]));
-
-        // Variante B: aus DB
-        // $this->availableAbilities = ApiAbility::orderBy('name')->pluck('name')->all();
     }
 
     public function loadKey(int $userId, ?int $apiKeyId = null): void

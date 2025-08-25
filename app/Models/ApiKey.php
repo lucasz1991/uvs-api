@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use App\Models\User;
 
 class ApiKey extends Model
 {
@@ -46,6 +47,11 @@ class ApiKey extends Model
             'model' => $model,
             'plain' => $plain, // nur einmal anzeigen!
         ];
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
     }
 
     /**
