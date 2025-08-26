@@ -21,7 +21,6 @@ class ApiKeyFormModal extends Component
     public array $abilities = [];
     public array $availableAbilities = []; // Für das Select
 
-    public ?string $lang = null;
     public ?string $notes = null;
     public ?string $plainToken = null;
 
@@ -31,7 +30,6 @@ class ApiKeyFormModal extends Component
         'expires_at' => 'nullable|date',
         'abilities'  => 'array',
         'abilities.*'=> 'string|max:255',
-        'lang'       => 'nullable|string|max:10',
         'notes'      => 'nullable|string|max:2000',
     ];
 
@@ -61,7 +59,6 @@ class ApiKeyFormModal extends Component
 
             $settings         = $key->settings ?? [];
             $this->abilities  = array_values($settings['abilities'] ?? []);
-            $this->lang       = $settings['lang'] ?? null;
 
             $meta             = $key->meta ?? [];
             $this->notes      = $meta['notes'] ?? null;
@@ -70,12 +67,37 @@ class ApiKeyFormModal extends Component
             $this->active = true;
             $this->expires_at = null;
             $this->abilities = [];
-            $this->lang = null;
             $this->notes = null;
         }
 
         $this->showModal = true;
     }
+
+    public function generateNewToken(): void
+    {
+        if (!$this->apiKeyId) {
+            $this->addError('plainToken', 'API-Key muss zuerst gespeichert werden.');
+            return;
+        }
+
+        // Bestehenden Key laden
+        $key = ApiKey::where('user_id', $this->userId)->findOrFail($this->apiKeyId);
+
+        // Neuen Klartext-Token generieren
+        $plain = \Illuminate\Support\Str::random(64);
+        $hash  = hash('sha256', $plain);
+
+        // Hash ersetzen
+        $key->update([
+            'token_hash' => $hash
+        ]);
+
+        // Klartext-Token einmalig anzeigen
+        $this->plainToken = $plain;
+
+        $this->dispatch('api-key.saved', userId: $this->userId);
+    }
+
 
     public function saveKey(): void
     {
@@ -83,7 +105,6 @@ class ApiKeyFormModal extends Component
 
         $settings = [
             'abilities' => array_values($this->abilities),
-            'lang'      => $this->lang,
         ];
         $meta = ['notes' => $this->notes];
 

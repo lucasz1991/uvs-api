@@ -107,18 +107,4 @@ class User extends Authenticatable
     }
 
 
-
-    
-    public function hasAccessToInvoice($filename)
-    {
-        // Extrahiere die Benutzer-ID aus dem Dateinamen (z. B. "1_Doe_rental_bill_12345_date_2024_12_15.pdf")
-        if (preg_match('/^(\d+)_/', $filename, $matches)) {
-            $userIdFromFilename = $matches[1];
-
-            // Prüfe, ob die Benutzer-ID mit der aktuellen Benutzer-ID übereinstimmt
-            return $this->id == $userIdFromFilename;
-        }
-
-        return false; // Zugriff verweigern, wenn der Dateiname nicht das richtige Format hat
-    }
 }

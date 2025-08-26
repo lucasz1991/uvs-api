@@ -22,7 +22,11 @@
             </div>
         </div>
     </div>
-    <div class="mb-4 flex flex-wrap  justify-between gap-4">
+    <livewire:users.ap-management.user-create-form />
+    <x-button wire:click="$dispatch('usercreateformshow')" class="btn-xs">
+        ➕&nbsp;&nbsp;Neuer Benutzer
+    </x-button>
+    <div class="mb-4 flex flex-wrap mt-6  justify-between gap-4">
         <div class="mb-6 max-w-md">
             <h1 class="text-2xl font-bold text-gray-700">Benutzer</h1>
             <p class="text-gray-500">Es gibt insgesamt {{ $users->total() }} Benutzer.</p>

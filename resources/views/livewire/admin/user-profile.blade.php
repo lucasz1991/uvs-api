@@ -93,7 +93,7 @@
     </div>
 <!-- Tab-Menü -->
 <ul class="flex w-full text-sm font-medium text-center text-gray-500 bg-gray-100 rounded-lg shadow divide-gray-200">
-            <!-- Details Tab -->
+            <!-- Api-Schlüssel Tab -->
         <li class="w-full">
             <button 
                 @click="selectedTab = 'userApiKey'" 
@@ -101,6 +101,16 @@
                 class="w-full p-4 transition-all duration-200 bg-gray-100 hover:bg-blue-100 hover:text-blue-600 focus:outline-none"
             >
                 Api-Schlüssel
+            </button>
+        </li>
+        <!-- Aktivitäten Tab -->
+        <li class="w-full border-l border-gray-200">
+            <button 
+                @click="selectedTab = 'activities'" 
+                :class="{ 'text-blue-600 bg-white border-b-2 border-blue-600': selectedTab === 'activities' }" 
+                class="w-full p-4 transition-all duration-200 bg-gray-100 hover:bg-blue-100 hover:text-blue-600 focus:outline-none"
+            >
+                Aktivitäten
             </button>
         </li>
         <!-- Details Tab -->
@@ -114,16 +124,6 @@
             </button>
         </li>
         
-        <!-- Buchungen Tab -->
-        <li class="w-full border-l border-gray-200">
-            <button 
-                @click="selectedTab = 'activities'" 
-                :class="{ 'text-blue-600 bg-white border-b-2 border-blue-600': selectedTab === 'activities' }" 
-                class="w-full p-4 transition-all duration-200 bg-gray-100 hover:bg-blue-100 hover:text-blue-600 focus:outline-none"
-            >
-                Aktivitäten
-            </button>
-        </li>
 
     </ul>
 
@@ -134,6 +134,11 @@
                   <livewire:users.ap-management.user-api-keys-panel :user-id="$user->id" lazy/>
                   
 
+            </div>
+        </div>
+        <div  x-show="selectedTab === 'activities'" x-collapse  x-cloak>
+            <div class="w-full bg-gray-100 shadow rounded-lg p-6 mt-4">
+                <livewire:users.ap-management.user-activity-log :userId="$user->id"  lazy/>
             </div>
         </div>
         <div  x-show="selectedTab === 'userDetails'" x-collapse  x-cloak>
@@ -170,12 +175,7 @@
                 </div>
             </div>
         </div>
-        <div  x-show="selectedTab === 'activities'" x-collapse  x-cloak>
-            <div class="w-full bg-gray-100 shadow rounded-lg p-6 mt-4">
-                <h2 class="text-2xl font-bold text-gray-800 mb-4">Aktivitäten</h2>
 
-            </div>
-        </div>
     </div>
 
 

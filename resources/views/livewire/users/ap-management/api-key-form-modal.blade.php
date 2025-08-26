@@ -12,24 +12,22 @@
                     @error('name') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                 </div>
                 <div class="col-span-1">
-                    <label class="block text-sm font-medium text-gray-700">Sprache</label>
-                    <select wire:model="lang" class="mt-1 block w-full border rounded px-4 py-2 bg-white">
-                        <option value="">Alle</option>
-                        <option value="DE">Deutsch</option>
-                        <option value="EN">Englisch</option>
-                    </select>
-                    @error('lang') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                    <label for="active" class="flex items-center cursor-pointer">
+                        <input 
+                            id="active" 
+                            name="active" 
+                            type="checkbox" 
+                            @change="changed = true"
+                            wire:model.live="active" 
+                            class="sr-only peer" 
+                        />
+                        <div class="relative w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                        <span class="ms-3 text-sm font-medium text-gray-900 dark:text-gray-300">Aktiv</span>
+                    </label>
                 </div>
             </div>
 
             <div class="mb-4 grid grid-cols-3 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Status</label>
-                    <select wire:model="active" class="mt-1 block w-full bg-white border rounded px-1 py-2">
-                        <option value="1">Aktiv</option>
-                        <option value="0">Inaktiv</option>
-                    </select>
-                </div>
 
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Gültig bis</label>
@@ -73,13 +71,25 @@
                     @error('abilities') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
                 </div>
             </div>
-            @if($plainToken)
+            @if ($plainToken)
                 <div class="bg-yellow-50 border border-yellow-200 text-sm p-3 rounded">
                     <strong>Neues Token (nur einmal sichtbar):</strong>
                     <div class="font-mono break-all mt-1">{{ $plainToken }}</div>
                     <p class="mt-2 text-xs">Bitte jetzt kopieren, später nicht mehr einsehbar!</p>
                 </div>
+            @elseif ($apiKeyId)
+                <div class="text-sm text-gray-500">
+                    Das Token wird nur bei der Erstellung oder beim Erneuern eines Schlüssels angezeigt.
+                </div>
+                <button type="button" class="mt-2 text-sm text-blue-600 hover:underline" wire:click="generateNewToken">
+                    Schlüssel neu generieren
+                </button>
+            @else
+                <div class="text-sm text-gray-500">
+                    Das Token wird nach dem ersten Speichern automatisch angezeigt.
+                </div>
             @endif
+
         </x-slot>
 
         <x-slot name="footer">

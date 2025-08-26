@@ -11,6 +11,6 @@ use App\Http\Controllers\Api\ParticipantApiController;
 |--------------------------------------------------------------------------
 */
 
-Route::post('/participants', [ParticipantApiController::class, 'store'])->name('participants.store');
+Route::post('/participants/store', [ParticipantApiController::class, 'store'])->name('participants.store');
 
 

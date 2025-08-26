@@ -15,6 +15,11 @@ class UserApiKeysPanel extends Component
 
     public string $search = '';
 
+    protected $paginationTheme = 'tailwind';
+
+    // listener for API key creation
+    protected $listeners = ['api-key.saved' => 'resetPage'];
+
     public function mount(int $userId): void
     {
         $this->userId = $userId;

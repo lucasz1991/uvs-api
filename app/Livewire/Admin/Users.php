@@ -28,6 +28,8 @@ class Users extends Component
 
     protected $queryString = ['search', 'sortBy', 'sortDirection'];
 
+    protected $listeners = ['user.created' => 'resetPage'];
+
     public function updatingSearch()
     {
         $this->resetPage();
