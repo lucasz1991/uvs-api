@@ -58,7 +58,7 @@ Admin-Zugang
 
 Nach der Installation existiert ein Standard-Admin-Konto:
 
-E-Mail: admin@minifinds.de
+E-Mail: lucas@zacharias-net.de
 
 Passwort: password
 
@@ -94,4 +94,4 @@ Support & Weiterentwicklung
 
 Feature-Wünsche und Fehlerberichte können über GitHub Issues eingereicht werden. Updates werden regelmäßig implementiert, insbesondere Sicherheits- und Performance-Optimierungen.
 
-© 2025 MiniFinds GbR | Entwickelt von LMZ Media
+© 2025  | Entwickelt von LMZ Media
