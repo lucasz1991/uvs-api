@@ -61,8 +61,6 @@ class ParticipantApiController extends Controller
 
             // Pflichtangaben für Interessent
             'qualifiz_art'     => 'required|string|max:20',
-            'frueh_beginn'     => 'required|date_format:Y-m-d',
-            'datenschutz'      => 'required|string|max:2',
         ]);
 
         $db = DB::connection('uvs');
@@ -134,8 +132,6 @@ class ParticipantApiController extends Controller
                 'eng_vorkenntnis' => $data['eng_vorkenntnis'] ?? null,
                 'katalog_kz'      => $data['katalog_kz'] ?? null,
                 'qualifiz_art'    => $data['qualifiz_art'],
-                'frueh_beginn'    => $data['frueh_beginn'],
-                'datenschutz'     => $data['datenschutz'],
             ];
 
             $db->table('interess')->insert($interess_data);
