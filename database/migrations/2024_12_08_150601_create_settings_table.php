@@ -19,7 +19,7 @@ return new class extends Migration
             $table->timestamps();
     
             // Zusammengesetzter eindeutiger Index für key, type und value
-            $table->unique(['key', 'type', 'value']);
+            $table->unique(['key', 'type']);
         });
     }
 

@@ -4,7 +4,7 @@
 <head>
     @include('layouts.metahead')
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('title') | Admin-Area CBW Schulnetz </title>
+    <title>@yield('title') | Admin-Area CBW UVS Api </title>
     <!-- css files -->
     @include('layouts.head-css')
     @vite(['resources/css/app.css'])
