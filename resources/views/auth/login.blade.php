@@ -8,9 +8,11 @@
 @section('content')
     <div class="my-auto">
         <div class="text-center">
-            <h5 class="text-gray-600 dark:text-gray-100">Willkommen im Adminbereich von CBW Schulnetz</h5>
+            <h5 class="text-gray-600 dark:text-gray-100">
+                Willkommen im Adminbereich der UVS-API
+            </h5>
             <p class="text-gray-500 dark:text-gray-100/60 mt-1">
-            Melde dich an, um Schulnetzwerke zu verwalten, Nutzeranfragen zu bearbeiten und die Plattform zu administrieren.
+                Melde dich an, um API-Zugänge zu verwalten und die Schnittstellen des UVS-Systems zu administrieren.
             </p>
         </div>
 

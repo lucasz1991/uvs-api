@@ -17,7 +17,7 @@
                             </div>
                             <div class="mt-12 text-center">
                                 <a class="btn bg-violet-500 border-transparent focus:ring focus:ring-violet-50 py-2 text-white"
-                                    href="/">Back to Dashboard</a>
+                                    href="/">Zurück</a>
                             </div>
                         </div>
                         <div class="col-span-8 col-start-3">

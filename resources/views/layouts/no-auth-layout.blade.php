@@ -15,7 +15,7 @@
                             <p class="text-gray-500 dark:text-gray-100 relative  select-none">©
                                 <script>
                                     document.write(new Date().getFullYear())
-                                </script> CBW Schulnetz Admin-Area<br> Made by Zacharias
+                                </script> CBW UVS-API <br> Made by Zacharias
                             </p>
                             <p class="text-gray-500 dark:text-gray-100 relative mb-5  select-none">
                                 <small>v.0.1</small>
