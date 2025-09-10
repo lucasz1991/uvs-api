@@ -196,7 +196,378 @@ class ParticipantApiController extends Controller
         }
     }
 
-    /** ——— Hilfsfunktionen für datensparsames Logging ——— */
+    public function get(Request $request)
+    {
+        $this->connectToUvsDatabase();
+        $person_mail = $request->query('mail');
+        if (!$person_mail) {
+            return response()->json(['message' => 'mail is required'], 400);
+        }
+
+        $db = DB::connection('uvs');
+        $person = $db->table('person')->where('email_priv', $person_mail)->first();
+        if (!$person) {
+            return response()->json(['message' => 'Person not found'], 404);
+        }
+
+        activity('uvs')
+            ->causedBy($request->user())
+            ->withProperties([
+                'event'         => 'participant.retrieved',
+                'institut_id'   => $person->institut_id,
+                'person_id'     => $person->person_id,
+            ])
+            ->log('Participant data retrieved');
+
+        return response()->json(['person' => $person]);
+    }
+
+    public function getParticipantAndQualiprogram(Request $request, string $person_id)
+    {
+        $this->connectToUvsDatabase();
+        $db = DB::connection('uvs');
+
+        // Person laden
+        $person = $db->table('person')->where('person_id', $person_id)->first();
+        if (!$person) {
+            return response()->json(['message' => 'Person not found'], 404);
+        }
+
+        // Falls eine bestimmte Beratung gewünscht ist (Query-Param), sonst "neueste" Beratung ermitteln
+        $beratungId = $request->query('beratung_id');
+
+        if (!$beratungId) {
+            $beratungRow = $db->table('xvertrag AS xv')
+                ->leftJoin('ivertrag AS iv', 'iv.beratung_id', '=', 'xv.beratung_id')
+                ->leftJoin('tvertrag AS tv', 'tv.teilnehmer_id', '=', 'xv.teilnehmer_id')
+                ->leftJoin('person AS p', 'p.person_id', '=', 'iv.person_id')
+                ->where('p.person_id', $person_id)
+                ->orderByDesc('tv.vertrag_beginn')
+                ->select('xv.beratung_id')
+                ->first();
+            if (!$beratungRow) {
+                return response()->json([
+                    'person' => $person,
+                    'quali_data' => null,
+                    'message' => 'No contract found for this person',
+                ], 200);
+            }
+            $beratungId = $beratungRow->beratung_id;
+        }
+
+        // Haupt-Qualiprogramm + Vertragsdaten laden (entspricht deinem $query_str)
+        $qualiBase = $db->table('xvertrag AS xv')
+            ->leftJoin('ivertrag AS iv', 'iv.beratung_id', '=', 'xv.beratung_id')
+            ->leftJoin('tvertrag AS tv', 'tv.teilnehmer_id', '=', 'xv.teilnehmer_id')
+            ->leftJoin('person AS p', 'p.person_id', '=', 'iv.person_id')
+            ->leftJoin('interess AS i', 'i.person_id', '=', 'p.person_id')
+            ->leftJoin('massnahm AS mn', 'mn.massnahme_id', '=', 'tv.massnahme_id')
+            ->where('xv.beratung_id', $beratungId)
+            ->where('p.person_id', $person_id)
+            ->selectRaw("
+                xv.teilnehmer_nr,
+                p.geschlecht,
+                CONCAT(p.nachname, ', ', p.vorname) AS name,
+                p.geburt_datum,
+                p.kunden_nr,
+                tv.stammklasse,
+                tv.vtz_kennz_mn AS vtz,
+                iv.vertrag_uform AS uform_kurz,
+                tv.kurzbez_mn AS massn_kurz,
+                tv.vertrag_beginn,
+                tv.vertrag_ende,
+                tv.vertrag_datum,
+                tv.vertrag_baust,
+                mn.langbez_w,
+                mn.langbez_m,
+                iv.rechnung_nr,
+                i.test_punkte,
+                tv.teilnehmer_id,
+                p.stamm_nr_kst,
+                iv.storno_zum,
+                iv.kuendig_zum,
+                p.email_priv
+            ")
+            ->first();
+
+        if (!$qualiBase) {
+            return response()->json([
+                'person' => $person,
+                'quali_data' => null,
+                'message' => 'Contract not found for given beratung_id',
+            ], 200);
+        }
+
+        // Kostenträger-Info (entspricht deinem $kst_str)
+        $kostData = $db->table('x_iv_kst')
+            ->leftJoin('mpperson AS mp', 'mp.mpperson_id', '=', 'x_iv_kst.mpperson_id')
+            ->leftJoin('mpbuero AS mpb', 'mpb.mpbuero_id', '=', 'x_iv_kst.mpbuero_id')
+            ->where('x_iv_kst.beratung_id', $beratungId)
+            ->select([
+                'mpb.langbez AS mp_langbez',
+                'mpb.plz AS mp_plz',
+                'mpb.ort AS mp_ort',
+                'mp.nachname AS mp_nachname',
+                'mp.vorname AS mp_vorname',
+            ])
+            ->first();
+
+        $qualiprog = [];
+        // Basis-Felder aus Vertrag
+        $qualiprog['teilnehmer_id']   = $qualiBase->teilnehmer_id;
+        $qualiprog['teilnehmer_nr']   = $qualiBase->teilnehmer_nr;
+        $qualiprog['geschlecht']      = $qualiBase->geschlecht;
+        $qualiprog['name']            = $qualiBase->name;
+        $qualiprog['geburt_datum']    = $this->dateToDotted($qualiBase->geburt_datum);
+        $qualiprog['kunden_nr']       = $qualiBase->kunden_nr;
+        $qualiprog['stammklasse']     = $qualiBase->stammklasse;
+        $qualiprog['vtz']             = $qualiBase->vtz; // Kurzcode; Langtext folgt unten
+        $qualiprog['uform_kurz']      = $qualiBase->uform_kurz;
+        $qualiprog['massn_kurz']      = $qualiBase->massn_kurz;
+        $qualiprog['vertrag_beginn']  = $this->dateToDotted($qualiBase->vertrag_beginn);
+        $qualiprog['vertrag_ende']    = $this->dateToDotted($qualiBase->vertrag_ende);
+        $qualiprog['vertrag_datum']   = $this->dateToDotted($qualiBase->vertrag_datum);
+        $qualiprog['vertrag_baust']   = $qualiBase->vertrag_baust;
+        $qualiprog['langbez_w']       = $qualiBase->langbez_w;
+        $qualiprog['langbez_m']       = $qualiBase->langbez_m;
+        $qualiprog['rechnung_nr']     = $qualiBase->rechnung_nr;
+        $qualiprog['test_punkte']     = $qualiBase->test_punkte;
+        $qualiprog['stamm_nr_kst']    = $qualiBase->stamm_nr_kst;
+        $qualiprog['storno_zum']      = $this->dateToDotted($qualiBase->storno_zum);
+        $qualiprog['kuendig_zum']     = $this->dateToDotted($qualiBase->kuendig_zum);
+        $qualiprog['email_priv']      = $qualiBase->email_priv;
+
+        // Kostenträger-Block
+        $qualiprog['mp_langbez']  = $kostData->mp_langbez  ?? '';
+        $qualiprog['mp_plz']      = $kostData->mp_plz      ?? '';
+        $qualiprog['mp_ort']      = $kostData->mp_ort      ?? '';
+        $qualiprog['mp_nachname'] = $kostData->mp_nachname ?? '';
+        $qualiprog['mp_vorname']  = $kostData->mp_vorname  ?? '';
+
+        // U-Form (Langtext) & VTZ (Langtext) aus keydefs
+        $qualiprog['uform'] = '';
+        if (!empty($qualiBase->uform_kurz)) {
+            $qualiprog['uform'] = (string) $db->table('keydefs')
+                ->where('schluessel_wert', $qualiBase->uform_kurz)
+                ->where('schluessel_name', 'UFOR')
+                ->where('deleted', 0)
+                ->value('text1') ?? '';
+        }
+
+        $qualiprog['vtz_lang'] = (string) $db->table('keydefs')
+            ->where('schluessel_wert', $qualiBase->vtz)
+            ->where('schluessel_name', 'VTZK')
+            ->where('deleted', 0)
+            ->value('text1') ?? '';
+
+        // Termin-Institut (entspricht deiner Logik)
+        $vertragBeginnRaw = $qualiBase->vertrag_beginn;
+        $terminInstId = ($vertragBeginnRaw && $vertragBeginnRaw < '2025-01-01')
+            ? $person->institut_id
+            : '1';
+
+        // Teilnehmer-Baustein-Kette laden (entspricht deinem $tn_baust_str)
+        $bausteine = $db->table('tn_baust')
+            ->leftJoin('baustein', 'baustein.baustein_id', '=', 'tn_baust.baustein_id')
+            ->leftJoin('termin', 'termin.termin_id', '=', 'tn_baust.termin_id_ham')
+            ->leftJoin('tn_u_kla', function ($join) {
+                $join->on('tn_u_kla.baustein_id', '=', 'tn_baust.baustein_id')
+                    ->on('tn_u_kla.teilnehmer_id', '=', 'tn_baust.teilnehmer_id');
+            })
+            ->where('tn_baust.teilnehmer_id', $qualiBase->teilnehmer_id)
+            ->where('tn_baust.deleted', '0')
+            ->where('termin.institut_id', $terminInstId) // früher: $qprog_inst_id = '1'
+            ->groupBy('tn_baust.tn_baustein_id')
+            ->orderBy('termin.beginn_baustein')
+            ->select([
+                'termin.beginn_baustein',
+                'termin.ende_baustein',
+                'termin.baustein_tage',
+                'tn_u_kla.klassen_co_ks',
+                'tn_baust.kurzbez_ba',
+                'baustein.langbez',
+                'tn_baust.tn_fehltage',
+                'termin.termin_id',
+                'tn_u_kla.klassen_id',
+                'baustein.unterricht_pfl',
+                'baustein.baustein_id',
+                'tn_baust.tn_baustein_id',
+            ])
+            ->get();
+
+        $tn_baust = [];
+        $kl_punkte_ges = 0;
+        $kl_punkte_count = 0;
+        $tn_punkte_ges = 0;
+        $fehltage_ges = 0;
+        $u_tage = 0;
+        $u_bausteine = 0;
+        $prak_tage = 0;
+
+        foreach ($bausteine as $row) {
+            $currBausteinId = $row->baustein_id;
+            $currTerminId   = $row->termin_id;
+
+            $item = [
+                'beginn_baustein' => $this->dateToDotted($row->beginn_baustein),
+                'ende_baustein'   => $this->dateToDotted($row->ende_baustein),
+                'baustein_tage'   => (int)($row->baustein_tage ?? 0),
+                'klassen_co_ks'   => $row->klassen_co_ks,
+                'kurzbez'         => $row->kurzbez_ba,
+                'langbez'         => trim(($row->kurzbez_ba ?? '') . ' - ' . ($row->langbez ?? ''), ' -'),
+                'fehltage'        => 0,
+                'klassenschnitt'  => 0,
+                'tn_punkte'       => 0,
+            ];
+
+            // Fehl-Tage pro Termin (ohne TA)
+            $fehltage = (int) $db->table('tn_fehl')
+                ->where('termin_id', $currTerminId)
+                ->where('teilnehmer_id', $qualiBase->teilnehmer_id)
+                ->where('fehl_grund', '!=', '')
+                ->where('fehl_grund', '!=', 'TA')
+                ->count();
+
+            $item['fehltage'] = $fehltage;
+            $fehltage_ges += $fehltage;
+
+            // Klassen-Schnitt (AVG) – Filter wie im Altcode
+            $klSchnitt = $db->table('tn_p_kla')
+                ->where('klassen_id', $row->klassen_id)
+                ->where('baustein_id', $currBausteinId)
+                ->whereNotIn('kurzbez_ba', ['PRAK','FERI'])
+                ->where('kurzbez_ba', 'NOT LIKE', 'PRUE%')
+                ->whereNotIn('pruef_kennz', ['B','D','X','E','XO'])
+                ->avg('pruef_punkte');
+
+            if ($klSchnitt !== null) {
+                $klSchnittRounded = (int) round($klSchnitt);
+                $item['klassenschnitt'] = (int) floor($klSchnittRounded);
+                $kl_punkte_ges += $klSchnittRounded;
+                if ($klSchnittRounded > 0) {
+                    $kl_punkte_count++;
+                }
+            } else {
+                $item['klassenschnitt'] = 0;
+            }
+
+            // TN-Punkte für diesen Baustein (nimmt 1 Datensatz – wie Altcode)
+            $tnRow = $db->table('tn_p_kla')
+                ->where('tn_baustein_id', $row->tn_baustein_id)
+                ->select(['pruef_punkte AS tn_punkte','pruef_kennz'])
+                ->first();
+
+            if ($tnRow) {
+                $tn_punkte_baust = (int) ($tnRow->tn_punkte ?? 0);
+                $pruef_kennz     = (string) ($tnRow->pruef_kennz ?? '');
+
+                if ($pruef_kennz === 'I') {
+                    // wie im Altcode: I reduziert den Klassenpunkte-Counter wieder
+                    $kl_punkte_count = max(0, $kl_punkte_count - 1);
+                }
+
+                if ($tn_punkte_baust > 0) {
+                    $item['tn_punkte'] = $tn_punkte_baust;
+                    $tn_punkte_ges += $tn_punkte_baust;
+                }
+
+                // Spezialfälle – 1:1 übernommen
+                if ($pruef_kennz === 'B') { $item['klassenschnitt'] = 'extern'; $item['tn_punkte'] = 'passed'; }
+                elseif ($pruef_kennz === 'D') { $item['klassenschnitt'] = 'extern'; $item['tn_punkte'] = 'failed'; }
+                elseif ($pruef_kennz === 'X') { $item['klassenschnitt'] = 'extern'; $item['tn_punkte'] = 'not att'; }
+                elseif ($pruef_kennz === 'E') { $item['klassenschnitt'] = 'extern'; $item['tn_punkte'] = 'pending'; }
+                elseif ($pruef_kennz === 'XO') { $item['klassenschnitt'] = 'extern'; $item['tn_punkte'] = 'pending'; }
+                elseif ($pruef_kennz === 'I') { $item['tn_punkte'] = '---'; }
+            }
+
+            // FERI/PRUE/PRAK überschreibt Anzeige
+            if (in_array($row->kurzbez_ba, ['FERI','PRUE','PRAK'], true)) {
+                $item['tn_punkte'] = '---';
+                $item['klassenschnitt'] = '---';
+            }
+            if ($row->kurzbez_ba === 'FERI') {
+                $item['fehltage'] = '-';
+            }
+
+            // Summenblöcke wie im Altcode
+            if (($row->unterricht_pfl ?? '') === 'J') {
+                $u_tage += (int)($row->baustein_tage ?? 0);
+                $u_bausteine++;
+            }
+            if ($row->kurzbez_ba === 'PRAK') {
+                $prak_tage += (int)($row->baustein_tage ?? 0);
+            }
+
+            $tn_baust[] = $item;
+        }
+
+        // Relevante Bausteine zählen (entspricht deinem $relev_bausteine_str)
+        $relev_bausteine = (int) $db->table('tn_p_kla')
+            ->where('teilnehmer_id', $qualiBase->teilnehmer_id)
+            ->whereNotIn('kurzbez_ba', ['PRAK','FERI'])
+            ->where('kurzbez_ba', 'NOT LIKE', 'PRUE%')
+            ->whereNotIn('pruef_kennz', ['B','D','E','X','XO','I',''])
+            ->count();
+
+        $tn_schnitt = 0;
+        $klassen_schnitt = 0;
+        if ($relev_bausteine > 0) {
+            $tn_schnitt       = (int) ceil($tn_punkte_ges / $relev_bausteine);
+            $klassen_schnitt  = (int) floor($kl_punkte_ges / $relev_bausteine);
+        }
+
+        $qualiprog['tn_baust'] = $tn_baust;
+
+        // Summenblock wie im Altcode
+        $qualiprog['summen'] = [
+            'note_lang'       => $this->ergebnisLang($tn_schnitt), // frei anpassbar
+            'klassen_schnitt' => $klassen_schnitt,
+            'tn_schnitt'      => $tn_schnitt,
+            'fehltage'        => $fehltage_ges,
+            'u_tage'          => $u_tage,
+            'u_std'           => $u_bausteine * 80,
+            'prak_tage'       => $prak_tage,
+            'prak_std'        => $prak_tage * 8,
+        ];
+
+        activity('uvs')
+            ->causedBy($request->user())
+            ->withProperties([
+                'event'       => 'participant.qualiprograms_retrieved',
+                'institut_id' => $person->institut_id,
+                'person_id'   => $person->person_id,
+                'beratung_id' => $beratungId,
+            ])->log('Participant and Qualiprogram data retrieved');
+
+        return response()->json([
+            'person'     => $person,
+            'quali_data' => $qualiprog,
+        ]);
+    }
+
+    /** ---------- Helper ---------- */
+
+    private function dateToDotted(?string $ymd): ?string
+    {
+        if (!$ymd) return null;
+        // unterstützt ggf. 'Y-m-d H:i:s'
+        $date = substr($ymd, 0, 10);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) return $ymd;
+        [$y,$m,$d] = explode('-', $date);
+        return sprintf('%02d.%02d.%04d', (int)$d, (int)$m, (int)$y);
+    }
+
+    private function ergebnisLang(int $points): string
+    {
+        // Platzhalter-Logik – passe sie deiner internen "ergebnis_lang"-Definition an
+        if ($points >= 90) return 'sehr gut';
+        if ($points >= 80) return 'gut';
+        if ($points >= 67) return 'befriedigend';
+        if ($points >= 50) return 'ausreichend';
+        if ($points > 0)   return 'mangelhaft';
+        return '—';
+    }
+    
     protected function maskEmail(string $email): string
     {
         [$local, $domain] = explode('@', $email, 2);

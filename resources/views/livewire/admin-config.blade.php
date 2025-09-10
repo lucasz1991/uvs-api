@@ -71,8 +71,8 @@
                 @livewire('admin.config.basic-settings')
             </div>
 
-                <!-- Mails Tab -->
-                <div x-show="activeTab === 'mails'" x-cloak class="space-y-10" x-collapse.duration.400ms>
+            <!-- Mails Tab -->
+            <div x-show="activeTab === 'mails'" x-cloak class="space-y-10" x-collapse.duration.400ms>
                 <h2 class="text-2xl font-semibold">Mails</h2>
                     <!-- Admin E-Mail Adresse -->
                     <x-settings-collapse>
@@ -173,7 +173,6 @@
                         </x-slot>
                     </x-settings-collapse>
                 </div>
-                
             </div>
         </div>
 </div>

@@ -27,10 +27,9 @@
     <div class="space-y-8">
         <x-settings-collapse>
             <x-slot name="trigger">
-            Datenbank UVS
+                Datenbank UVS
             </x-slot>
             <x-slot name="content">
-                <!-- Bild-Uploads -->
                 <div class="">
 
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

@@ -45,7 +45,7 @@ class ApiKeyMiddleware
 
         // 6) Ability prüfen
         $routeName = $request->route()?->getName();
-        if (!$routeName || !$apiKey->hasAbility($routeName)) {
+        if (!$routeName || !$apiKey->hasAbility($routeName) && !$apiKey->hasAbility('all')) {
             return response()->json(['message' => 'Permission denied'], 403);
         }
 
