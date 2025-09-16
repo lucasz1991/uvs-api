@@ -57,6 +57,8 @@ class ParticipantApiController extends Controller
                 'eng_vorkenntnis'  => 'nullable|string|max:10',
                 'katalog_kz'       => 'nullable|string|max:20',
                 'qualifiz_art'     => 'required|string|max:20',
+                'foreign_id'       => 'nullable|string|max:50',
+
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             // optional: Business-Activity fürs Validierungsversagen
@@ -132,6 +134,8 @@ class ParticipantApiController extends Controller
                 'telefon2'        => $data['telefon2'] ?? null,
                 'person_kz'       => $data['person_kz'] ?? null,
                 'upd_date'        => $now,
+                'foreign_id'      => $data['foreign_id'] ?? null,
+                'referrer'       => optional($request->attributes->get('apiKey'))->name ?? null,
             ]);
 
             $interessent_nr = $person_nr . '00';
@@ -567,7 +571,7 @@ class ParticipantApiController extends Controller
         if ($points > 0)   return 'mangelhaft';
         return '—';
     }
-    
+
     protected function maskEmail(string $email): string
     {
         [$local, $domain] = explode('@', $email, 2);
