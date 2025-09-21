@@ -135,7 +135,7 @@ class ParticipantApiController extends Controller
                 'person_kz'       => $data['person_kz'] ?? null,
                 'upd_date'        => $now,
                 'foreign_id'      => $data['foreign_id'] ?? null,
-                'referrer'       => optional($request->attributes->get('apiKey'))->name ?? null,
+                'referrer'        => optional($request->attributes->get('apiKey'))->name ?? null,
             ]);
 
             $interessent_nr = $person_nr . '00';
