@@ -34,7 +34,7 @@ class CourseApiController extends Controller
     public function getCourseClasses(Request $request)
     {
         $data = $request->validate([
-            'search' => 'required|string|max:255',
+            'search' => 'sometimes|nullable|string|max:255',
             'limit'  => 'sometimes|integer|min:1|max:100',
             'from'   => 'sometimes|date_format:Y-m-d',
             'to'     => 'sometimes|date_format:Y-m-d|after_or_equal:from',
@@ -43,57 +43,63 @@ class CourseApiController extends Controller
         $this->connectToUvsDatabase();
 
         $limit  = $data['limit'] ?? 25;
-        $search = trim($data['search']);
+        $search = trim((string)($data['search'] ?? ''));
+
+        $has = fn(string $c) => \Illuminate\Support\Facades\Schema::connection('uvs')->hasColumn('u_klasse', $c);
+
+        $hasKurzbez     = $has('kurzbez');        // bei dir: false
+        $hasBezeichnung = $has('bezeichnung');    // meist true
+        $hasBeginn      = $has('unterr_beginn');
+        $hasEnde        = $has('unterr_ende');
+        $hasDeleted     = $has('deleted');
 
         $q = DB::connection('uvs')
             ->table('u_klasse as k')
-            ->leftJoin('ma_u_kla as mk', 'mk.klassen_id', '=', 'k.klassen_id')
-            ->where(function ($w) use ($search) {
-                // Suche nur auf Feldern, die in der Praxis wirklich vorhanden sind:
-                $w->where('k.kurzbez', 'like', "%{$search}%")
-                ->orWhere('k.bezeichnung', 'like', "%{$search}%");
-            })
-            ->where(function ($w) {
-                $w->whereNull('k.deleted')->orWhere('k.deleted', 0);
+            ->leftJoin('ma_u_kla as mk', 'mk.klassen_id', '=', 'k.klassen_id');
+
+        if ($search !== '') {
+            $q->where(function ($w) use ($search, $hasKurzbez, $hasBezeichnung) {
+                $like = "%{$search}%"; $first = true;
+                if ($hasKurzbez)     { $first ? $w->where('k.kurzbez', 'like', $like)     : $w->orWhere('k.kurzbez', 'like', $like); $first=false; }
+                if ($hasBezeichnung) { $first ? $w->where('k.bezeichnung', 'like', $like) : $w->orWhere('k.bezeichnung', 'like', $like); $first=false; }
+                if ($first)          { $w->where('k.klassen_id', 'like', $like); }
             });
-
-        // Datumsfilter (falls vorhanden – wenn nicht, ist whereDate no-op)
-        if (!empty($data['from'])) {
-            $q->whereDate('k.unterr_beginn', '>=', $data['from']);
-        }
-        if (!empty($data['to'])) {
-            $q->whereDate('k.unterr_ende', '<=', $data['to']);
         }
 
-        $classes = $q->select([
-                'k.klassen_id',
-                'k.kurzbez',
-                'k.bezeichnung',
-                'k.unterr_beginn',
-                'k.unterr_ende',
-                DB::raw("(
-                    SELECT COUNT(*)
-                    FROM tn_u_kla tuk
-                    WHERE tuk.klassen_id = k.klassen_id
-                    AND (tuk.deleted IS NULL OR tuk.deleted = 0)
-                ) as participants_count"),
-                DB::raw("(
-                    SELECT COUNT(DISTINCT mk2.mitarbeiter_id)
-                    FROM ma_u_kla mk2
-                    WHERE mk2.klassen_id = k.klassen_id
-                    AND (mk2.deleted IS NULL OR mk2.deleted = 0)
-                ) as teachers_count"),
-            ])
-            // falls 'unterr_beginn' mal fehlt, kannst du hier auf 'k.klassen_id' wechseln:
-            ->orderBy('k.unterr_beginn', 'desc')
-            ->limit($limit)
-            ->get();
+        if ($hasDeleted) {
+            $q->where(fn($w) => $w->whereNull('k.deleted')->orWhere('k.deleted', 0));
+        }
 
-        return response()->json([
-            'ok'   => true,
-            'data' => $classes,
-        ]);
+        if (!empty($data['from']) && $hasBeginn) $q->whereDate('k.unterr_beginn', '>=', $data['from']);
+        if (!empty($data['to'])   && $hasEnde)   $q->whereDate('k.unterr_ende',   '<=', $data['to']);
+
+        $select = ['k.klassen_id'];
+        if ($hasKurzbez)     $select[] = 'k.kurzbez';
+        if ($hasBezeichnung) $select[] = 'k.bezeichnung';
+        if ($hasBeginn)      $select[] = 'k.unterr_beginn';
+        if ($hasEnde)        $select[] = 'k.unterr_ende';
+
+        $select[] = DB::raw("(
+            SELECT COUNT(*) FROM tn_u_kla tuk
+            WHERE tuk.klassen_id = k.klassen_id
+            AND (tuk.deleted IS NULL OR tuk.deleted = 0)
+        ) as participants_count");
+
+        $select[] = DB::raw("(
+            SELECT COUNT(DISTINCT mk2.mitarbeiter_id) FROM ma_u_kla mk2
+            WHERE mk2.klassen_id = k.klassen_id
+            AND (mk2.deleted IS NULL OR mk2.deleted = 0)
+        ) as teachers_count");
+
+        $orderCol = $hasBeginn ? 'k.unterr_beginn' : 'k.klassen_id';
+
+        $classes = $q->select($select)->orderBy($orderCol, 'desc')->limit($limit)->get();
+
+        return response()->json(['ok' => true, 'data' => $classes]);
     }
+
+
+
 
     /**
      * GET /api/course-classes/participants?course_class_id=123

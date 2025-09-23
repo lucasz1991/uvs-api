@@ -6,6 +6,7 @@ use App\Livewire\AdminDashboard;
 use App\Livewire\AdminConfig;
 use App\Livewire\Admin\Users;
 use App\Livewire\Admin\Safety;
+use App\Livewire\Admin\Logs\LogViewer;
 use App\Livewire\Admin\UserProfile;
 
 
@@ -28,6 +29,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::get('/config', AdminConfig::class)->name('admin.config');
         Route::get('/users', Users::class)->name('admin.users');
         Route::get('/admin/activities', Safety::class)->name('admin.activities');
+        Route::get('/admin/logs', LogViewer::class)->name('admin.logs');
         Route::get('/admin/user/{userId}', UserProfile::class)->name('admin.user-profile');
 
     });
