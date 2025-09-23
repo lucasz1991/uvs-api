@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\ParticipantApiController;
 use App\Http\Controllers\Api\PersonApiController;
 use App\Http\Controllers\Api\TutorApiController;
+use App\Http\Controllers\Api\CourseApiController;
 
 
 
@@ -24,3 +25,6 @@ Route::get('/person/status', [PersonApiController::class, 'getStatus'])->name('p
 
 Route::get('/tutorprogram/person', [TutorApiController::class, 'getTutorProgramByPersonId'])->name('tutorprogram.person.get');
 
+Route::get('/course-classes', [CourseApiController::class, 'getCourseClasses'])->name('course-classes.get');
+
+Route::get('/course-classes/participants', [CourseApiController::class, 'getCourseClassesParticipants'])->name('course-classes.participants.get');

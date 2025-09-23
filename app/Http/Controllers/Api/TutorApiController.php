@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\Setting;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Log;
 
 class TutorApiController extends Controller
 {
@@ -39,111 +42,151 @@ class TutorApiController extends Controller
 
         $this->connectToUvsDatabase();
 
-        // person_id in institut_id + person_nr splitten
-        [$institutId, $personNr] = $this->splitPersonId($data['person_id']);
+        $personId = trim($data['person_id']);
 
-        // 1) DOZENT (Stammdaten/Profil) – angelehnt an 1_6_2_mitarbeit_quali_profil.php
-        // -----------------------------------------------------------
-        // Typische Tabellen/Spalten (bitte an eure UVS-DB angleichen):
-        // - mitarbeiter (oder: mitarbeiter_stamm)
-        //   Felder: mitarbeiter_id, person_nr, institut_id, name, vorname, email, telefon, status, ...
-        // - mitarbeiter_quali (Qualifikationen / Profil-Ergänzungen)
-        //   Felder: mitarbeiter_id, institut_id, quali_text|bemerkung|titel|fachrichtung|...
-        $tutor = DB::connection('uvs')
-            ->table('mitarbeiter as m')                // <— ggf. anpassen
-            ->leftJoin('mitarbeiter_quali as q', function ($join) { // <— ggf. anpassen
-                $join->on('q.mitarbeiter_id', '=', 'm.mitarbeiter_id')
-                     ->on('q.institut_id', '=', 'm.institut_id');
-            })
-            ->where('m.institut_id', $institutId)
-            ->where(function ($q) use ($personNr) {
-                // Falls eure DB statt mitarbeiter_id die person_nr nutzt – beide Varianten unterstützen
-                $q->where('m.mitarbeiter_id', $personNr)
-                  ->orWhere('m.person_nr', $personNr);
-            })
-            ->selectRaw('
-                m.mitarbeiter_id,
-                m.person_nr,
-                m.institut_id,
-                m.name as nachname,
-                m.vorname,
-                m.email as email,
-                m.telefon as telefon,
-                m.status as status,
-                q.titel as quali_titel,
-                q.fachrichtung as quali_fachrichtung,
-                q.bemerkung as quali_bemerkung
-            ')
-            ->first();
-
-        if (!$tutor) {
+        if (!str_contains($personId, '-')) {
             return response()->json([
-                'ok' => false,
-                'error' => 'Tutor nicht gefunden (bitte Tabellen-/Spaltenmapping prüfen).',
-            ], 404);
+                'ok'    => false,
+                'error' => 'Ungültiges person_id-Format. Erwartet: {institut_id}-{person_nr}',
+            ], 422);
         }
 
-        $mitarbeiterId = $tutor->mitarbeiter_id ?? $personNr; // Fallback: nutze personNr, wenn mitarbeiter_id fehlt
+        [$institutId, $personNr] = array_map('trim', explode('-', $personId, 2));
 
-        // 2) THEMENGEBIETE – angelehnt an 1_6_3_dozent_themen.php
-        // -----------------------------------------------------------
-        // Tabellen/Spalten (bitte angleichen):
-        // - doz_themengebiete (dt): mitarbeiter_id, institut_id, themengebiet_id, bemerkung, deleted
-        // - themengebiete (t): uid, name
-        $themes = DB::connection('uvs')
-            ->table('doz_themengebiete as dt') // <— ggf. anpassen
-            ->join('themengebiete as t', 't.uid', '=', 'dt.themengebiet_id') // <— ggf. anpassen
-            ->where('dt.institut_id', $institutId)
-            ->where('dt.mitarbeiter_id', $mitarbeiterId)
-            ->where(function ($q) {
-                // deleted-Flag falls vorhanden (defensiv)
-                $q->whereNull('dt.deleted')->orWhere('dt.deleted', 0);
-            })
-            ->orderBy('t.name')
-            ->get([
-                DB::raw('t.uid as themengebiet_id'),
-                DB::raw('t.name'),
-                DB::raw('dt.bemerkung'),
+        try {
+            // -----------------------------
+            // 1) Tutor-Stammdaten (mitarbei)
+            // -----------------------------
+            $tutorQuery = DB::connection('uvs')->table('mitarbei as m');
+
+            $hasMitarbeiterQuali = Schema::connection('uvs')->hasTable('mitarbeiter_quali');
+            $hasMitarbQuali      = Schema::connection('uvs')->hasTable('mitarb_quali');
+
+            if ($hasMitarbeiterQuali) {
+                $tutorQuery->leftJoin('mitarbeiter_quali as q', function ($join) {
+                    $join->on('q.mitarbeiter_id', '=', 'm.mitarbei_id')
+                        ->on('q.institut_id',   '=', 'm.institut_id');
+                });
+            } elseif ($hasMitarbQuali) {
+                $tutorQuery->leftJoin('mitarb_quali as q', function ($join) {
+                    $join->on('q.mitarbei_id', '=', 'm.mitarbei_id')
+                        ->on('q.institut_id',  '=', 'm.institut_id');
+                });
+            }
+
+            $select = [
+                'm.mitarbei_id as mitarbeiter_id',
+                'm.institut_id',
+            ];
+            if (Schema::connection('uvs')->hasColumn('mitarbei','person_nr')) $select[] = 'm.person_nr';
+            if (Schema::connection('uvs')->hasColumn('mitarbei','name'))      $select[] = DB::raw('m.name as nachname');
+            if (Schema::connection('uvs')->hasColumn('mitarbei','vorname'))   $select[] = 'm.vorname';
+            if (Schema::connection('uvs')->hasColumn('mitarbei','email'))     $select[] = 'm.email';
+            if (Schema::connection('uvs')->hasColumn('mitarbei','telefon'))   $select[] = 'm.telefon';
+            if (Schema::connection('uvs')->hasColumn('mitarbei','status'))    $select[] = 'm.status';
+
+            if ($hasMitarbeiterQuali || $hasMitarbQuali) {
+                // Quali-Spalten aliasieren – wenn es die Spalten in q nicht gibt, kommen sie als NULL
+                $select[] = DB::raw('q.titel as quali_titel');
+                $select[] = DB::raw('q.fachrichtung as quali_fachrichtung');
+                $select[] = DB::raw('q.bemerkung as quali_bemerkung');
+            }
+
+            $tutor = $tutorQuery
+                ->where('m.institut_id', $institutId)
+                ->where(function ($q) use ($personNr) {
+                    $q->where('m.mitarbei_id', $personNr);
+                    if (Schema::connection('uvs')->hasColumn('mitarbei','person_nr')) {
+                        $q->orWhere('m.person_nr', $personNr);
+                    }
+                })
+                ->select($select)
+                ->first();
+
+            if (!$tutor) {
+                return response()->json([
+                    'ok'    => false,
+                    'error' => 'Tutor nicht gefunden (prüfe Tabellen/Spalten: "mitarbei", optional "mitarbeiter_quali"/"mitarb_quali").',
+                ], 404);
+            }
+
+            $mitarbeiterId = $tutor->mitarbeiter_id ?? $personNr;
+
+            // -----------------------------
+            // 2) Themen (doz_themengebiete + themengebiete)
+            // -----------------------------
+            $themes = collect();
+            if (Schema::connection('uvs')->hasTable('doz_themengebiete') && Schema::connection('uvs')->hasTable('themengebiete')) {
+
+                $tgIdCol  = Schema::connection('uvs')->hasColumn('themengebiete','uid')            ? 't.uid'
+                        : (Schema::connection('uvs')->hasColumn('themengebiete','themengeb_id') ? 't.themengeb_id' : null);
+
+                $dtTgFk   = Schema::connection('uvs')->hasColumn('doz_themengebiete','themengebiet_id') ? 'dt.themengebiet_id'
+                        : (Schema::connection('uvs')->hasColumn('doz_themengebiete','themengeb_id')    ? 'dt.themengeb_id'     : null);
+
+                $dtMaFk   = Schema::connection('uvs')->hasColumn('doz_themengebiete','mitarbeiter_id')   ? 'dt.mitarbeiter_id'
+                        : (Schema::connection('uvs')->hasColumn('doz_themengebiete','mitarbei_id')     ? 'dt.mitarbei_id'      : null);
+
+                if ($tgIdCol && $dtTgFk && $dtMaFk) {
+                    $themes = DB::connection('uvs')
+                        ->table('doz_themengebiete as dt')
+                        ->join('themengebiete as t', DB::raw($tgIdCol), '=', DB::raw($dtTgFk))
+                        ->where('dt.institut_id', $institutId)
+                        ->where(DB::raw($dtMaFk),  $mitarbeiterId)
+                        ->where(function ($q) {
+                            $q->whereNull('dt.deleted')->orWhere('dt.deleted', 0);
+                        })
+                        ->orderBy('t.name')
+                        ->select([
+                            DB::raw($tgIdCol . ' as themengebiet_id'),
+                            't.name',
+                            'dt.bemerkung',
+                        ])
+                        ->get();
+                }
+            }
+
+            // -----------------------------
+            // 3) Bausteine (doz_baust)
+            // -----------------------------
+            $modules = collect();
+            if (Schema::connection('uvs')->hasTable('doz_baust')) {
+                $modules = DB::connection('uvs')
+                    ->table('doz_baust')
+                    ->where('mitarbeiter_id', $mitarbeiterId)
+                    ->where(function ($q) {
+                        $q->whereNull('deleted')->orWhere('deleted', 0);
+                    })
+                    ->orderByDesc('uid') // wie im Alt-Script
+                    ->select([
+                        DB::raw('uid as doz_baust_id'),
+                        'kurzbez',
+                        'bemerkung',
+                    ])
+                    ->get();
+            }
+
+            return response()->json([
+                'ok' => true,
+                'data' => [
+                    'tutor'   => $tutor,
+                    'themes'  => $themes,
+                    'modules' => $modules,
+                ]
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('TutorProgramByPersonId failed', [
+                'person_id'  => $personId,
+                'institutId' => $institutId,
+                'personNr'   => $personNr,
+                'msg'        => $e->getMessage(),
             ]);
 
-        // 3) DOZENTEN-BAUSTEINE – angelehnt an 1_6_4_dozent_bausteine.php
-        // -----------------------------------------------------------
-        // Tabelle: doz_baust (Feldernamen lt. altem Skript)
-        // Felder: uid, mitarbeiter_id, kurzbez, bemerkung, deleted
-        $modules = DB::connection('uvs')
-            ->table('doz_baust') // <— ggf. anpassen
-            ->where('mitarbeiter_id', $mitarbeiterId)
-            ->where(function ($q) {
-                $q->whereNull('deleted')->orWhere('deleted', 0);
-            })
-            ->groupBy('kurzbez')           // aus dem alten Skript
-            ->orderByDesc('uid')           // aus dem alten Skript
-            ->get([
-                DB::raw('uid as doz_baust_id'),
-                'kurzbez',
-                'bemerkung',
-            ]);
-
-        return response()->json([
-            'ok' => true,
-            'data' => [
-                'tutor'   => $tutor,
-                'themes'  => $themes,
-                'modules' => $modules,
-            ]
-        ]);
-    }
-
-    private function splitPersonId(string $personId): array
-    {
-        // Erwartet "{institut_id}-{person_nr}"
-        $parts = explode('-', $personId, 2);
-        if (count($parts) !== 2) {
-            abort(response()->json([
-                'ok' => false,
-                'error' => 'person_id muss im Format "{institut_id}-{person_nr}" übergeben werden.',
-            ], 422));
+            return response()->json([
+                'ok'    => false,
+                'error' => 'Interner Fehler bei der Abfrage (Details im Log).',
+            ], 500);
         }
-        return [$parts[0], $parts[1]];
     }
+
 }
