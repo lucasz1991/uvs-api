@@ -70,5 +70,7 @@
                 Speichern
             </x-button>
         </div>
+        <livewire:admin.config.database-tester />
+
     </div>
 </div>
