@@ -2,28 +2,13 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
 use App\Models\Setting;
 
-class PersonApiController extends Controller
+class PersonApiController extends BaseUvsController
 {
-    protected function connectToUvsDatabase(): void
-    {
-        config(['database.connections.uvs' => [
-            'driver'    => 'mysql',
-            'host'      => Setting::getValue('database', 'hostname'),
-            'database'  => Setting::getValue('database', 'database'),
-            'username'  => Setting::getValue('database', 'username'),
-            'password'  => Setting::getValue('database', 'password'),
-            'charset'   => 'utf8mb4',
-            'collation' => 'utf8mb4_unicode_ci',
-            'prefix'    => '',
-        ]]);
-    }
-
     /**
      * GET /api/person/status?person_id=1-0026419
      * person_id-Format: "{institut_id}-{person_nr}"

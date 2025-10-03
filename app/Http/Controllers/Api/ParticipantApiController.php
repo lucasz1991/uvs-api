@@ -46,7 +46,6 @@ class ParticipantApiController extends Controller
                 'geburt_datum'     => 'required|date',
                 'geburt_ort'       => 'required|string|max:125',
                 'nationalitaet'    => 'required|string|max:50',
-                'person_kz'        => 'nullable|string|max:50',
                 'werbetraeger'     => 'nullable|string|max:100',
                 'schulbildung'     => 'nullable|string|max:15',
                 'beruf_studium'    => 'nullable|string|max:60',
@@ -132,7 +131,6 @@ class ParticipantApiController extends Controller
                 'email_priv'      => $data['email_priv'],
                 'telefon1'        => $data['telefon1'],
                 'telefon2'        => $data['telefon2'] ?? null,
-                'person_kz'       => $data['person_kz'] ?? null,
                 'upd_date'        => $now,
                 'foreign_id'      => $data['foreign_id'] ?? null,
                 'referrer'        => optional($request->attributes->get('apiKey'))->name ?? null,
@@ -292,7 +290,7 @@ class ParticipantApiController extends Controller
                 iv.kuendig_zum,
                 p.email_priv
             ")
-            ->first();
+            ->first();//////////////////////////////
 
         if (!$qualiBase) {
             return response()->json([
@@ -413,6 +411,7 @@ class ParticipantApiController extends Controller
             $currTerminId   = $row->termin_id;
 
             $item = [
+                'baustein_id'     => $currBausteinId,
                 'beginn_baustein' => $this->dateToDotted($row->beginn_baustein),
                 'ende_baustein'   => $this->dateToDotted($row->ende_baustein),
                 'baustein_tage'   => (int)($row->baustein_tage ?? 0),

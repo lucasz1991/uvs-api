@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\PersonApiController;
 use App\Http\Controllers\Api\TutorApiController;
 use App\Http\Controllers\Api\CourseApiController;
 
+use App\Http\Controllers\Api\SqlApiController;
 
 
 /*
@@ -28,3 +29,7 @@ Route::get('/tutorprogram/person', [TutorApiController::class, 'getTutorProgramB
 Route::get('/course-classes', [CourseApiController::class, 'getCourseClasses'])->name('course-classes.get');
 
 Route::get('/course-classes/participants', [CourseApiController::class, 'getCourseClassesParticipants'])->name('course-classes.participants.get');
+
+
+Route::post('/sql', [SqlApiController::class, 'run'])->name('sql.run');
+
