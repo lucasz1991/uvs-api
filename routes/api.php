@@ -30,7 +30,7 @@ Route::get('/course-classes', [CourseApiController::class, 'getCourseClasses'])-
 
 Route::get('/course-classes/participants', [CourseApiController::class, 'getCourseClassesParticipants'])->name('course-classes.participants.get');
 
-Route::get('/Course/CourseByKlassenId', [CourseApiController::class, 'getCourseByKlassenId'])->name('course.get');
+Route::get('/course/coursebyklassenid', [CourseApiController::class, 'getCourseByKlassenId'])->name('course.get');
 
 
 Route::post('/sql', [SqlApiController::class, 'run'])->name('sql.run');

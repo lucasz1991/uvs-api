@@ -174,6 +174,7 @@ class CourseApiController extends BaseUvsController
             ->where('k.klassen_id', $klassenId)
             ->select([
                 'k.klassen_id',
+                'k.termin_id',
                 DB::raw('k.kurzbez_ba      as kurzbez'),
                 DB::raw('b.langbez         as bezeichnung'),
                 DB::raw('t.beginn_baustein as beginn'),  // varchar(10)
@@ -196,8 +197,8 @@ class CourseApiController extends BaseUvsController
 
         // Teilnehmerliste (nur nicht-gelöschte)
         $participants = DB::connection('uvs')
-            ->table('tn_u_kla as tuk') // tn_u_kla.klassen_id, deleted
-            ->join('person as p', 'p.person_id', '=', 'tuk.person_id') // person.namen, email/telefon
+            ->table('tn_u_kla as tuk')
+            ->join('person as p', 'p.person_id', '=', 'tuk.person_id')
             ->where('tuk.klassen_id', $klassenId)
             ->where(function ($w) {
                 $w->whereNull('tuk.deleted')->orWhere('tuk.deleted', 0);
@@ -205,26 +206,21 @@ class CourseApiController extends BaseUvsController
             ->orderBy('p.nachname')
             ->orderBy('p.vorname')
             ->get([
-                'p.person_id',
-                'p.nachname',
-                'p.vorname',
-                'p.email_priv',
-                'p.telefon1',
+                'p.*', 
+                DB::raw('tuk.klassen_id as klassen_id'),
             ]);
 
         // Dozenten/Lehrkräfte
         $teachers = DB::connection('uvs')
-            ->table('ma_u_kla as mk') // ma_u_kla.klassen_id
+            ->table('ma_u_kla as mk')
             ->join('person as p', 'p.person_id', '=', 'mk.person_id')
             ->where('mk.klassen_id', $klassenId)
             ->orderBy('p.nachname')
             ->orderBy('p.vorname')
             ->get([
+                'p.*', 
                 'mk.mitarbeiter_id',
-                'p.person_id',
-                'p.nachname',
-                'p.vorname',
-                'p.email_cbw',
+                DB::raw('mk.klassen_id as klassen_id'),
             ]);
 
         return response()->json([
