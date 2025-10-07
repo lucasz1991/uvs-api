@@ -142,4 +142,98 @@ class CourseApiController extends BaseUvsController
             ],
         ]);
     }
+
+     /**
+     * GET /api/Course/CourseByKlassenId?klassen_id=XYZ
+     *
+     * Response:
+     * {
+     *   "ok": true,
+     *   "data": {
+     *     "course": {...},
+     *     "participants": [...],
+     *     "teachers": [...]
+     *   }
+     * }
+     */
+    public function getCourseByKlassenId(Request $request)
+    {
+        $data = $request->validate([
+            'klassen_id' => 'required|string|max:25',
+        ]);
+
+        $this->connectToUvsDatabase();
+
+        $klassenId = $data['klassen_id'];
+
+        // Kurs-/Klassen-Stammdaten
+        $course = DB::connection('uvs')
+            ->table('u_klasse as k') // u_klasse.klassen_id, kurzbez_ba, termin_id
+            ->leftJoin('baustein as b', 'b.kurzbez', '=', 'k.kurzbez_ba') // baustein.langbez
+            ->leftJoin('termin   as t', 't.termin_id', '=', 'k.termin_id') // termin.beginn_baustein/ende_baustein
+            ->where('k.klassen_id', $klassenId)
+            ->select([
+                'k.klassen_id',
+                DB::raw('k.kurzbez_ba      as kurzbez'),
+                DB::raw('b.langbez         as bezeichnung'),
+                DB::raw('t.beginn_baustein as beginn'),  // varchar(10)
+                DB::raw('t.ende_baustein   as ende'),    // varchar(10)
+                'k.institut_id_ks',
+                'k.vtz_kennz_ks',
+                'k.klassen_co_ks',
+                'k.status',
+                'k.unterr_raum',
+                'k.unterr_beginn',
+                'k.unterr_ende',
+                'k.unterr_ende_fr',
+                'k.unterr_ende_fr2',
+            ])
+            ->first();
+
+        if (!$course) {
+            return response()->json(['ok' => false, 'error' => 'Klasse nicht gefunden.'], 404);
+        }
+
+        // Teilnehmerliste (nur nicht-gelöschte)
+        $participants = DB::connection('uvs')
+            ->table('tn_u_kla as tuk') // tn_u_kla.klassen_id, deleted
+            ->join('person as p', 'p.person_id', '=', 'tuk.person_id') // person.namen, email/telefon
+            ->where('tuk.klassen_id', $klassenId)
+            ->where(function ($w) {
+                $w->whereNull('tuk.deleted')->orWhere('tuk.deleted', 0);
+            })
+            ->orderBy('p.nachname')
+            ->orderBy('p.vorname')
+            ->get([
+                'p.person_id',
+                'p.nachname',
+                'p.vorname',
+                'p.email_priv',
+                'p.telefon1',
+            ]);
+
+        // Dozenten/Lehrkräfte
+        $teachers = DB::connection('uvs')
+            ->table('ma_u_kla as mk') // ma_u_kla.klassen_id
+            ->join('person as p', 'p.person_id', '=', 'mk.person_id')
+            ->where('mk.klassen_id', $klassenId)
+            ->orderBy('p.nachname')
+            ->orderBy('p.vorname')
+            ->get([
+                'mk.mitarbeiter_id',
+                'p.person_id',
+                'p.nachname',
+                'p.vorname',
+                'p.email_cbw',
+            ]);
+
+        return response()->json([
+            'ok'   => true,
+            'data' => [
+                'course'       => $course,
+                'participants' => $participants,
+                'teachers'     => $teachers,
+            ],
+        ]);
+    }
 }

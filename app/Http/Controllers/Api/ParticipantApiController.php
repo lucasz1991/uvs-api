@@ -8,21 +8,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
 use App\Models\Setting;
 
-class ParticipantApiController extends Controller
+class ParticipantApiController extends BaseUvsController
 {
-    protected function connectToUvsDatabase(): void
-    {
-        config(['database.connections.uvs' => [
-            'driver' => 'mysql',
-            'host' => Setting::getValue('database', 'hostname'),
-            'database' => Setting::getValue('database', 'database'),
-            'username' => Setting::getValue('database', 'username'),
-            'password' => Setting::getValue('database', 'password'),
-            'charset' => 'utf8mb4',
-            'collation' => 'utf8mb4_unicode_ci',
-            'prefix' => '',
-        ]]);
-    }
 
     public function store(Request $request)
     {
@@ -275,6 +262,7 @@ class ParticipantApiController extends Controller
                 tv.stammklasse,
                 tv.vtz_kennz_mn AS vtz,
                 iv.vertrag_uform AS uform_kurz,
+                tv.massnahme_id AS massnahme_id,
                 tv.kurzbez_mn AS massn_kurz,
                 tv.vertrag_beginn,
                 tv.vertrag_ende,
@@ -290,7 +278,7 @@ class ParticipantApiController extends Controller
                 iv.kuendig_zum,
                 p.email_priv
             ")
-            ->first();//////////////////////////////
+            ->first();
 
         if (!$qualiBase) {
             return response()->json([
@@ -323,6 +311,7 @@ class ParticipantApiController extends Controller
         $qualiprog['geburt_datum']    = $this->dateToDotted($qualiBase->geburt_datum);
         $qualiprog['kunden_nr']       = $qualiBase->kunden_nr;
         $qualiprog['stammklasse']     = $qualiBase->stammklasse;
+        $qualiprog['massnahme_id']    = $qualiBase->massnahme_id;
         $qualiprog['vtz']             = $qualiBase->vtz; // Kurzcode; Langtext folgt unten
         $qualiprog['uform_kurz']      = $qualiBase->uform_kurz;
         $qualiprog['massn_kurz']      = $qualiBase->massn_kurz;
@@ -411,7 +400,10 @@ class ParticipantApiController extends Controller
             $currTerminId   = $row->termin_id;
 
             $item = [
+
                 'baustein_id'     => $currBausteinId,
+                'klassen_id'      => $row->klassen_id,
+                'tn_baustein_id'  => $row->tn_baustein_id,
                 'beginn_baustein' => $this->dateToDotted($row->beginn_baustein),
                 'ende_baustein'   => $this->dateToDotted($row->ende_baustein),
                 'baustein_tage'   => (int)($row->baustein_tage ?? 0),

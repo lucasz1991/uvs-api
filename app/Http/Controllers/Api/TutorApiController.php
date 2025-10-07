@@ -13,9 +13,10 @@ class TutorApiController extends BaseUvsController
      * GET /api/tutorprogram/person?person_id=1-0026419
      * person_id-Format: "{institut_id}-{person_nr}"
      * Liefert:
-     *  - tutor  (Stammdaten + Person)
-     *  - themes (Themengebiete)
-     *  - modules(Dozenten-Bausteine)
+     *  - tutor   (Stammdaten + Person)
+     *  - themes  (Themengebiete)
+     *  - modules (Dozenten-Bausteine aus doz_baust)
+     *  - courses (NEU: konkrete Klassen/Kurse über ma_u_kla)
      */
     public function getTutorProgramByPersonId(Request $request)
     {
@@ -36,10 +37,10 @@ class TutorApiController extends BaseUvsController
         [$institutId, $personNr] = array_map('trim', explode('-', $personId, 2));
 
         try {
-            // 1) Tutor (mitarbei) + Namen/Email aus person
+            // 1) Tutor (mitarbei) + Person
             $tutor = DB::connection('uvs')
-                ->table('mitarbei as m')                           // NOTE: Schema hat 'mitarbeiter_id' (nicht 'mitarbei_id')
-                ->leftJoin('person as p', 'p.person_id', '=', 'm.person_id') // Namen liegen in 'person'
+                ->table('mitarbei as m')
+                ->leftJoin('person as p', 'p.person_id', '=', 'm.person_id')
                 ->where('m.institut_id', $institutId)
                 ->where(function ($q) use ($personNr) {
                     $q->where('m.mitarbeiter_id', $personNr)
@@ -51,7 +52,6 @@ class TutorApiController extends BaseUvsController
                     'm.person_nr',
                     'm.institut_id',
                     'm.status',
-                    // aus person:
                     'p.nachname',
                     'p.vorname',
                     'p.email_priv',
@@ -65,15 +65,12 @@ class TutorApiController extends BaseUvsController
                 ], 404);
             }
 
-            // 2) Themen (doz_themengebiete → themengebiete.uid)
+            // 2) Themengebiete
             $themes = DB::connection('uvs')
                 ->table('doz_themengebiete as dt')
                 ->join('themengebiete as t', 't.uid', '=', 'dt.themengebiet_id')
                 ->where('dt.institut_id', $tutor->institut_id)
                 ->where('dt.mitarbeiter_id', $tutor->mitarbeiter_id)
-                ->where(function ($q) {                 // <- deleted-Flag berücksichtigen
-                    $q->whereNull('dt.deleted')->orWhere('dt.deleted', 0);
-                })
                 ->orderBy('t.name')
                 ->get([
                     DB::raw('t.uid as themengebiet_id'),
@@ -81,18 +78,40 @@ class TutorApiController extends BaseUvsController
                     'dt.bemerkung',
                 ]);
 
-            // 3) Bausteine (doz_baust)
-            $modules = DB::connection('uvs')
-                ->table('doz_baust')
-                ->where('mitarbeiter_id', $tutor->mitarbeiter_id)
-                ->where(function ($q) {
-                    $q->whereNull('deleted')->orWhere('deleted', 0);
-                })
-                ->orderByDesc('uid')
+
+
+            // 4) NEU: Konkrete Kurse/Klassen über ma_u_kla
+            $courses = DB::connection('uvs')
+                ->table('ma_u_kla as mk') // Dozent-Zuordnung zu Klassen
+                ->join('u_klasse as k', 'k.klassen_id', '=', 'mk.klassen_id')
+                ->leftJoin('baustein as b', 'b.kurzbez', '=', 'k.kurzbez_ba')        // b.langbez
+                ->leftJoin('termin   as t', 't.termin_id', '=', 'k.termin_id')       // t.beginn_baustein / t.ende_baustein (varchar YYYY-MM-DD)
+                ->where('mk.mitarbeiter_id', $tutor->mitarbeiter_id)
+                ->orderByRaw("STR_TO_DATE(t.beginn_baustein, '%Y-%m-%d') DESC")
+                ->orderBy('k.klassen_id', 'DESC')
                 ->get([
-                    DB::raw('uid as doz_baust_id'),
-                    'kurzbez',
-                    'bemerkung',
+                    'k.klassen_id',
+                    DB::raw('k.kurzbez_ba      as kurzbez'),
+                    DB::raw('b.langbez         as bezeichnung'),
+                    DB::raw('t.beginn_baustein as beginn'),
+                    DB::raw('t.ende_baustein   as ende'),
+                    // praktische Zusatzinfos aus u_klasse (falls vorhanden)
+                    'k.status',
+                    'k.unterr_raum',
+                    'k.unterr_beginn',
+                    'k.unterr_ende',
+                    // Teilnehmer-/Dozenten-Zähler als Subselects, falls gewünscht:
+                    DB::raw("(
+                        SELECT COUNT(*)
+                        FROM tn_u_kla tuk
+                        WHERE tuk.klassen_id = k.klassen_id
+                          AND (tuk.deleted IS NULL OR tuk.deleted = 0)
+                    ) as participants_count"),
+                    DB::raw("(
+                        SELECT COUNT(DISTINCT mk2.mitarbeiter_id)
+                        FROM ma_u_kla mk2
+                        WHERE mk2.klassen_id = k.klassen_id
+                    ) as teachers_count"),
                 ]);
 
             return response()->json([
@@ -100,7 +119,7 @@ class TutorApiController extends BaseUvsController
                 'data' => [
                     'tutor'   => $tutor,
                     'themes'  => $themes,
-                    'modules' => $modules,
+                    'courses' => $courses, // <-- neu über ma_u_kla
                 ],
             ]);
 
