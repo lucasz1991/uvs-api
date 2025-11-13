@@ -33,7 +33,7 @@ class DatabaseTester extends Component
         ]]);
     }
 
-    /** Sichere Quoting-Hilfe für Tabellennamen */
+    /** Sichere Quoting-Hilfe für Tabellennamen / Spalten */
     protected function tick(string $identifier): string
     {
         return '`' . str_replace('`', '``', $identifier) . '`';
@@ -59,9 +59,48 @@ class DatabaseTester extends Component
     /** Exakte Row-Counts (teurer) */
     protected function loadExactRowCount(string $table): int
     {
-        $tn = $this->tick($table);
+        $tn  = $this->tick($table);
         $row = DB::connection('uvs')->selectOne("SELECT COUNT(*) AS c FROM {$tn}");
         return (int)($row->c ?? 0);
+    }
+
+    /** Wähle eine sinnvolle ORDER-BY-Spalte */
+    protected function chooseOrderColumn(array $columns): ?string
+    {
+        $names = array_column($columns, 'name');
+
+        if (in_array('uid', $names, true)) return 'uid';
+        if (in_array('id', $names, true))  return 'id';
+
+        foreach ($names as $n) {
+            if (str_ends_with($n, 'id')) return $n; // erstes *_id
+        }
+
+        // falls PK-Spalte existiert, nimm diese
+        foreach ($columns as $col) {
+            if (($col['key'] ?? null) === 'PRI') return $col['name'];
+        }
+
+        return null; // kein gutes Feld gefunden
+    }
+
+    /** Lade eine Beispielzeile (ORDER BY {col} DESC LIMIT 1, sonst LIMIT 1) */
+    protected function loadSampleRow(string $table, ?string $orderCol): ?array
+    {
+        $tn  = $this->tick($table);
+
+        try {
+            if ($orderCol) {
+                $oc  = $this->tick($orderCol);
+                $row = DB::connection('uvs')->selectOne("SELECT * FROM {$tn} ORDER BY {$oc} DESC LIMIT 1");
+            } else {
+                $row = DB::connection('uvs')->selectOne("SELECT * FROM {$tn} LIMIT 1");
+            }
+            return $row ? (array) $row : null;
+        } catch (Throwable $e) {
+            // z. B. VIEW ohne Rechte → nicht abbrechen
+            return null;
+        }
     }
 
     public function testConnection(): void
@@ -139,10 +178,16 @@ class DatabaseTester extends Component
                 $estimated = $estimatedMap[$tableName] ?? null;
                 $rowCount  = $this->exactCounts ? $this->loadExactRowCount($tableName) : $estimated;
 
+                // Beispielzeile laden
+                $orderCol = $this->chooseOrderColumn($columns);
+                $sample   = $this->loadSampleRow($tableName, $orderCol);
+
                 $result[] = [
                     'name'           => $tableName,
                     'row_count'      => $rowCount,                          // int|null
                     'row_count_type' => $this->exactCounts ? 'exact' : 'estimated',
+                    'order_by'       => $orderCol,                          // neu
+                    'sample'         => $sample,                            // neu
                     'columns'        => $columns,
                 ];
             }
@@ -177,7 +222,9 @@ class DatabaseTester extends Component
                 $cntInfo = isset($table['row_count'])
                     ? " | Rows ({$table['row_count_type']}): " . ($table['row_count'] ?? 'n/a')
                     : '';
-                $lines[] = "Tabelle: {$table['name']} (" . count($table['columns']) . " Spalten){$cntInfo}";
+                $orderInfo = $table['order_by'] ? " | OrderBy: {$table['order_by']} DESC" : '';
+
+                $lines[] = "Tabelle: {$table['name']} (" . count($table['columns']) . " Spalten){$cntInfo}{$orderInfo}";
 
                 foreach ($table['columns'] as $col) {
                     $len      = $col['length'] ?? '';
@@ -189,12 +236,24 @@ class DatabaseTester extends Component
 
                     $lines[] = "  - {$col['name']} : {$type} {$nullable}{$default}{$key}{$extra}";
                 }
+
+                // Beispielzeile ausgeben
+                $sample = $table['sample'] ?? null;
+                if (is_array($sample)) {
+                    $lines[] = "Beispielzeile:";
+                    $json = json_encode($sample, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+                    foreach (explode("\n", (string) $json) as $ln) {
+                        $lines[] = "    " . $ln;
+                    }
+                } else {
+                    $lines[] = "Beispielzeile: —";
+                }
+
                 $lines[] = ''; // Leerzeile zwischen Tabellen
             }
 
             // Optional: BOM für Windows-Notepad
             $content  = "\xEF\xBB\xBF" . implode(PHP_EOL, $lines);
-
             $filename = 'uvs_schema_' . now()->format('Ymd_His') . '.txt';
 
             return response()->streamDownload(

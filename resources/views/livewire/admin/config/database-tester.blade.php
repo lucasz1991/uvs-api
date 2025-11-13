@@ -33,9 +33,8 @@
         <div class="mt-6">
             <p class="text-sm text-gray-600 mb-2">
                 Gefundene Tabellen: <strong>{{ count($tables) }}</strong>
-                <span class="ml-3 inline-flex items-center rounded-full px-2 py-0.5 text-xs border"
-                      :class="{ 'bg-blue-50 border-blue-200 text-blue-700': {{ $exactCounts ? 'true' : 'false' }},
-                                'bg-amber-50 border-amber-200 text-amber-700': {{ $exactCounts ? 'false' : 'true' }} }">
+                <span class="ml-3 inline-flex items-center rounded-full px-2 py-0.5 text-xs border
+                    {{ $exactCounts ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-amber-50 border-amber-200 text-amber-700' }}">
                     {{ $exactCounts ? 'Row-Count: exakt' : 'Row-Count: geschätzt' }}
                 </span>
             </p>
@@ -43,17 +42,27 @@
             <div class="space-y-4">
                 @foreach ($tables as $table)
                     <details class="border rounded bg-white shadow-sm">
-                        <summary class="cursor-pointer px-4 py-3 font-semibold flex items-center justify-between">
+                        <summary class="cursor-pointer px-4 py-3 font-semibold flex flex-wrap gap-2 items-center justify-between">
                             <div class="flex items-center gap-2">
-                                <span>{{ $table['name'] }}</span>
+                                <span class="text-gray-900">{{ $table['name'] }}</span>
                                 <span class="ml-2 text-sm text-gray-500">
                                     ({{ count($table['columns']) }} Spalten)
                                 </span>
                             </div>
+
                             <div class="flex items-center gap-2">
-                                @php
-                                    $cnt = $table['row_count'] ?? null;
-                                @endphp
+                                @php $cnt = $table['row_count'] ?? null; @endphp
+
+                                @if(!empty($table['order_by']))
+                                    <span class="text-xs px-2 py-0.5 rounded-full border bg-slate-50 text-slate-700 border-slate-200">
+                                        ORDER BY {{ $table['order_by'] }} DESC
+                                    </span>
+                                @else
+                                    <span class="text-xs px-2 py-0.5 rounded-full border bg-slate-50 text-slate-400 border-slate-200">
+                                        ORDER BY — (LIMIT 1)
+                                    </span>
+                                @endif
+
                                 <span class="text-xs px-2 py-0.5 rounded-full
                                     {{ ($table['row_count_type'] ?? 'estimated') === 'exact'
                                         ? 'bg-blue-50 text-blue-700 border border-blue-200'
@@ -65,6 +74,7 @@
                         </summary>
 
                         <div class="p-4 overflow-x-auto">
+                            {{-- Spaltendefinitionen --}}
                             <table class="w-full text-sm border">
                                 <thead class="bg-gray-100">
                                     <tr>
@@ -91,6 +101,22 @@
                                     @endforeach
                                 </tbody>
                             </table>
+
+                            {{-- Beispiel-Datensatz --}}
+                            @if (!empty($table['sample']))
+                                <div class="mt-4">
+                                    <div class="text-xs font-semibold text-gray-600 mb-1">
+                                        Beispielzeile {{ $table['order_by'] ? '(ORDER BY '.$table['order_by'].' DESC)' : '' }}
+                                    </div>
+                                    <pre class="text-xs bg-gray-50 border rounded p-2 overflow-x-auto">
+{{ json_encode($table['sample'], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT) }}
+                                    </pre>
+                                </div>
+                            @else
+                                <div class="mt-4 text-xs text-gray-500">
+                                    Keine Beispielzeile gefunden (Tabelle leer oder nicht lesbar).
+                                </div>
+                            @endif
                         </div>
                     </details>
                 @endforeach
