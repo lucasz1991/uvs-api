@@ -36,7 +36,12 @@ class ApiKeyMiddleware
             
         }
 
-        if (!$apiKey->user->status) {
+        $isDevDb = (bool) data_get($apiKey->settings, 'isdevdb', false);
+
+        // Am Request für nachfolgende Schichten verfügbar machen (nicht im Input!)
+        $request->attributes->set('isdevdb', $isDevDb);
+
+        if (!$apiKey->user || !$apiKey->user->status) {
             return response()->json(['message' => 'Permission denied - User is not activ'], 401);
         }
 
@@ -45,7 +50,7 @@ class ApiKeyMiddleware
 
         // 6) Ability prüfen
         $routeName = $request->route()?->getName();
-        if (!$routeName || !$apiKey->hasAbility($routeName) && !$apiKey->hasAbility('all')) {
+        if (!$routeName || (! $apiKey->hasAbility($routeName) && ! $apiKey->hasAbility('all'))) {
             return response()->json(['message' => 'Permission denied'], 403);
         }
 
@@ -76,6 +81,8 @@ class ApiKeyMiddleware
             'api_key', 'apikey'
         ]);
 
+        $prefix = $isDevDb ? 'DEV:: ' : '';
+
         activity('api')
             ->causedBy($user)
             ->withProperties([
@@ -87,6 +94,7 @@ class ApiKeyMiddleware
                 'input'      => $input,
                 'user_agent' => $request->header('User-Agent'),
                 'route'      => $routeName,
+                'db_env'     => $isDevDb ? 'dev' : 'live',
             ])
             ->tap(function ($activity) use ($user, $eventSlug) {
                 if ($user) {
@@ -95,7 +103,8 @@ class ApiKeyMiddleware
                 }
                 $activity->event = $eventSlug;
             })
-            ->log("{$description} - used URL - {$fullUrl} - {$request->method()}");
+            ->log("{$prefix}{$description} - used URL - {$fullUrl} - {$request->method()}");
+
 
         // ===============================================================
 

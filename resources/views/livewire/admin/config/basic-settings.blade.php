@@ -65,6 +65,46 @@
                 </div>
             </x-slot>
         </x-settings-collapse>
+        <x-settings-collapse>
+            <x-slot name="trigger">
+                Datenbank UVS ::: Dev
+            </x-slot>
+            <x-slot name="content">
+                <div class="">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <!-- Hostname -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Hostname Dev</label>
+                        <input type="text" wire:model.defer="hostname_dev" @change="changed = true" class="border rounded px-4 py-2 w-full">
+                        @error('hostname_dev') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                    </div>
+
+                    <!-- Datenbank -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Datenbank Dev</label>
+                        <input type="text" wire:model.defer="database_dev" @change="changed = true" class="border rounded px-4 py-2 w-full">
+                        @error('database_dev') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                    </div>
+
+                    <!-- Benutzername -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Benutzername Dev</label>
+                        <input type="text" wire:model.defer="username_dev" @change="changed = true" class="border rounded px-4 py-2 w-full">
+                        @error('username_dev') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                    </div>
+
+                    <!-- Passwort -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Passwort Dev</label>
+                        <input type="password" wire:model.defer="password_dev" @change="changed = true" class="border rounded px-4 py-2 w-full">
+                        @error('password_dev') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                    </div>
+                </div>
+
+                </div>
+            </x-slot>
+        </x-settings-collapse>
         <div class="text-right">
             <x-button wire:click="saveSettings">
                 Speichern

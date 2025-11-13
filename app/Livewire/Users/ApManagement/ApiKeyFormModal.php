@@ -15,6 +15,7 @@ class ApiKeyFormModal extends Component
 
     public string $name = '';
     public bool $active = true;
+    public bool $isdevdb = false;
     public ?string $expires_at = null;
 
     /** Neu/gewünscht */
@@ -27,6 +28,7 @@ class ApiKeyFormModal extends Component
     protected $rules = [
         'name'       => 'required|string|max:255',
         'active'     => 'boolean',
+        'isdevdb'     => 'boolean',
         'expires_at' => 'nullable|date',
         'abilities'  => 'array',
         'abilities.*'=> 'string|max:255',
@@ -56,15 +58,17 @@ class ApiKeyFormModal extends Component
             $this->name       = $key->name;
             $this->active     = (bool) $key->active;
             $this->expires_at = $key->expires_at?->format('Y-m-d\TH:i');
-
+            
             $settings         = $key->settings ?? [];
             $this->abilities  = array_values($settings['abilities'] ?? []);
+            $this->isdevdb = (bool) (is_array($settings) ? ($settings['isdevdb'] ?? false) : false);
 
             $meta             = $key->meta ?? [];
             $this->notes      = $meta['notes'] ?? null;
         } else {
             $this->name = '';
             $this->active = true;
+            $this->isdevdb = false;
             $this->expires_at = null;
             $this->abilities = [];
             $this->notes = null;
@@ -105,6 +109,7 @@ class ApiKeyFormModal extends Component
 
         $settings = [
             'abilities' => array_values($this->abilities),
+            'isdevdb'     => $this->isdevdb,
         ];
         $meta = ['notes' => $this->notes];
 
