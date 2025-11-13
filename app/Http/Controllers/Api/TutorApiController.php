@@ -6,18 +6,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class TutorApiController extends BaseUvsController
 {
-    /**
-     * GET /api/tutorprogram/person?person_id=1-0026419
-     * person_id-Format: "{institut_id}-{person_nr}"
-     * Liefert:
-     *  - tutor   (Stammdaten + Person)
-     *  - themes  (Themengebiete)
-     *  - modules (Dozenten-Bausteine aus doz_baust)
-     *  - courses (NEU: konkrete Klassen/Kurse über ma_u_kla)
-     */
     public function getTutorProgramByPersonId(Request $request)
     {
         $data = $request->validate([
@@ -78,48 +70,59 @@ class TutorApiController extends BaseUvsController
                     'dt.bemerkung',
                 ]);
 
+            // 3) Kurse/Klassen über ma_u_kla (robust, mit Subselect-Zählern)
+            $db = DB::connection('uvs');
 
+            $courses = $db->table('ma_u_kla as mk')                   // Dozent-Zuordnung zu Klassen
+                ->leftJoin('u_klasse as k', 'k.klassen_id', '=', 'mk.klassen_id')
+                ->leftJoin('termin   as t', 't.termin_id', '=', 'k.termin_id')        // beginn/ende (yyyy-mm-dd als VARCHAR)
+                ->leftJoin('baustein as b', 'b.kurzbez', '=', 'k.kurzbez_ba')         // für b.langbez
 
-            // 4) NEU: Konkrete Kurse/Klassen über ma_u_kla
-            $courses = DB::connection('uvs')
-                ->table('ma_u_kla as mk') // Dozent-Zuordnung zu Klassen
-                ->join('u_klasse as k', 'k.klassen_id', '=', 'mk.klassen_id')
-                ->leftJoin('baustein as b', 'b.kurzbez', '=', 'k.kurzbez_ba')        // b.langbez
-                ->leftJoin('termin   as t', 't.termin_id', '=', 'k.termin_id')       // t.beginn_baustein / t.ende_baustein (varchar YYYY-MM-DD)
+                // Zugehörigkeit/Filter analog zu deinem Beispiel:
                 ->where('mk.mitarbeiter_id', $tutor->mitarbeiter_id)
-                ->orderByRaw("STR_TO_DATE(t.beginn_baustein, '%Y-%m-%d') DESC")
+                ->where('t.institut_id',     $tutor->institut_id)     // wie: where('termin.institut_id', $terminInstId)
+
+                // Deduplizieren auf Klassenebene (wie dein GROUP BY auf tn_baustein_id)
+                ->groupBy('k.klassen_id')
+
+                // Sortierung wie bei dir – Datum aus VARCHAR
+                ->orderByRaw("STR_TO_DATE(COALESCE(t.beginn_baustein,'0001-01-01'), '%Y-%m-%d') DESC")
                 ->orderBy('k.klassen_id', 'DESC')
-                ->get([
+
+                ->select([
                     'k.klassen_id',
                     DB::raw('k.kurzbez_ba      as kurzbez'),
                     DB::raw('b.langbez         as bezeichnung'),
                     DB::raw('t.beginn_baustein as beginn'),
                     DB::raw('t.ende_baustein   as ende'),
-                    // praktische Zusatzinfos aus u_klasse (falls vorhanden)
                     'k.status',
                     'k.unterr_raum',
                     'k.unterr_beginn',
                     'k.unterr_ende',
-                    // Teilnehmer-/Dozenten-Zähler als Subselects, falls gewünscht:
-                    DB::raw("(
-                        SELECT COUNT(*)
-                        FROM tn_u_kla tuk
-                        WHERE tuk.klassen_id = k.klassen_id
-                          AND (tuk.deleted IS NULL OR tuk.deleted = 0)
-                    ) as participants_count"),
-                    DB::raw("(
-                        SELECT COUNT(DISTINCT mk2.mitarbeiter_id)
-                        FROM ma_u_kla mk2
-                        WHERE mk2.klassen_id = k.klassen_id
-                    ) as teachers_count"),
-                ]);
+                ])
+
+                // Teilnehmer-Zähler (nur nicht-gelöschte)
+                ->selectSub(function ($q) {
+                    $q->from('tn_u_kla as tuk')
+                    ->selectRaw('COUNT(*)')
+                    ->whereColumn('tuk.klassen_id', 'k.klassen_id');
+                }, 'participants_count')
+
+                // Dozenten-Zähler (distinct)
+                ->selectSub(function ($q) {
+                    $q->from('ma_u_kla as mk2')
+                    ->selectRaw('COUNT(DISTINCT mk2.mitarbeiter_id)')
+                    ->whereColumn('mk2.klassen_id', 'k.klassen_id');
+                }, 'teachers_count')
+
+                ->get();
 
             return response()->json([
                 'ok'   => true,
                 'data' => [
                     'tutor'   => $tutor,
                     'themes'  => $themes,
-                    'courses' => $courses, // <-- neu über ma_u_kla
+                    'courses' => $courses,
                 ],
             ]);
 

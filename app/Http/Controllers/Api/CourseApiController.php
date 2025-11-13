@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+
 
 class CourseApiController extends BaseUvsController
 {
@@ -61,7 +63,6 @@ class CourseApiController extends BaseUvsController
                     SELECT COUNT(*)
                     FROM tn_u_kla tuk
                     WHERE tuk.klassen_id = k.klassen_id
-                    AND (tuk.deleted IS NULL OR tuk.deleted = 0)
                 ) as participants_count"),
 
                 DB::raw("(
@@ -108,30 +109,22 @@ class CourseApiController extends BaseUvsController
     public function getCourseClassesParticipants(Request $request)
     {
         $data = $request->validate([
-            'course_class_id' => 'required|string|max:25', // laut Schema varchar(24/25)
+            'course_class_id' => 'required|string|max:25',     // u_klasse.klassen_id
         ]);
 
         $this->connectToUvsDatabase();
 
-        $classId = $data['course_class_id'];
+        $classId    = $data['course_class_id'];
 
         $participants = DB::connection('uvs')
             ->table('tn_u_kla as tuk')
             ->join('person as p', 'p.person_id', '=', 'tuk.person_id')
             ->where('tuk.klassen_id', $classId)
-            // hier gibt es "deleted" wirklich
-            ->where(function ($w) {
-                $w->whereNull('tuk.deleted')->orWhere('tuk.deleted', 0);
-            })
             ->orderBy('p.nachname')
             ->orderBy('p.vorname')
             ->get([
-                'p.person_id',
-                'p.nachname',
-                'p.vorname',
-                'p.email_priv',
-                'p.telefon1',
-                DB::raw('tuk.klassen_id'),
+                'p.*', 
+                DB::raw('tuk.klassen_id as klassen_id'),
             ]);
 
         return response()->json([
@@ -142,6 +135,10 @@ class CourseApiController extends BaseUvsController
             ],
         ]);
     }
+
+
+
+
 
      /**
      * GET /api/Course/CourseByKlassenId?klassen_id=XYZ
@@ -200,9 +197,6 @@ class CourseApiController extends BaseUvsController
             ->table('tn_u_kla as tuk')
             ->join('person as p', 'p.person_id', '=', 'tuk.person_id')
             ->where('tuk.klassen_id', $klassenId)
-            ->where(function ($w) {
-                $w->whereNull('tuk.deleted')->orWhere('tuk.deleted', 0);
-            })
             ->orderBy('p.nachname')
             ->orderBy('p.vorname')
             ->get([
@@ -223,12 +217,68 @@ class CourseApiController extends BaseUvsController
                 DB::raw('mk.klassen_id as klassen_id'),
             ]);
 
+        // Kurstage (Tagesliste) zum Termin der Klasse
+        $courseDays = DB::connection('uvs')
+            ->table('termtag as tt')
+            ->where('tt.termin_id', $course->termin_id)
+            ->when(!empty($course->institut_id_ks), fn($q) =>
+                $q->where('tt.institut_id', $course->institut_id_ks)
+            )
+            ->whereNotNull('tt.std')
+            ->where('tt.std', '!=', '0.00')
+            ->orderByRaw("STR_TO_DATE(tt.datum, '%Y-%m-%d') ASC")
+            ->get([
+                'tt.termtag_id',
+                'tt.termin_id',
+                'tt.institut_id',
+                'tt.datum',            // varchar(10) YYYY-MM-DD
+                'tt.wochentag',        // z.B. 'Mo', 'Di', ...
+                'tt.std',              // Unterrichtsstunden (decimal)
+                'tt.unterr_beginn',    // 'HH:MM' (Default lt. Schema 08:00)
+                'tt.unterr_ende',      // 'HH:MM'
+                'tt.art',              // 1-char Typ (Unterricht/Prüfung/…)
+            ]);
+
+        
+// Bildungsmittel zum Baustein der Klasse (kurzbez)
+$now     = time();
+$kurzbez = $course->kurzbez; // alias aus SELECT oben
+
+$materials = DB::connection('uvs')
+    ->table('bmittel as bm')
+    ->where(function ($w) use ($kurzbez) {
+        $w->where('bm.baustein_1', $kurzbez)
+          ->orWhere('bm.baustein_2', $kurzbez)
+          ->orWhere('bm.baustein_3', $kurzbez)
+          ->orWhere('bm.baustein_4', $kurzbez)
+          ->orWhere('bm.baustein_5', $kurzbez)
+          ->orWhere('bm.baustein_6', $kurzbez);
+    })
+    ->where('bm.freigabe_von', '<=', $now) // bigint(20) Unixzeit
+    ->where('bm.freigabe_bis', '>=', $now) // bigint(20) Unixzeit
+    // optional: nur aktive Datensätze, falls in deiner DB so genutzt
+    // ->where('bm.status', '=', '1')
+    ->orderBy('bm.titel')
+    ->get([
+        'bm.titel',
+        'bm.titel2',
+        'bm.verlag',
+        'bm.isbn',
+        'bm.isbn_pdf',
+        'bm.bestell_nr',
+        'bm.preis',
+        'bm.preis_pdf',
+    ]);
+
+
         return response()->json([
             'ok'   => true,
             'data' => [
                 'course'       => $course,
                 'participants' => $participants,
                 'teachers'     => $teachers,
+                'days'         => $courseDays,
+                'materials'    => $materials,
             ],
         ]);
     }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\ParticipantApiController;
 use App\Http\Controllers\Api\PersonApiController;
 use App\Http\Controllers\Api\TutorApiController;
 use App\Http\Controllers\Api\CourseApiController;
+use App\Http\Controllers\Api\AssetsApiController;
 
 use App\Http\Controllers\Api\SqlApiController;
 
@@ -31,6 +32,9 @@ Route::get('/course-classes', [CourseApiController::class, 'getCourseClasses'])-
 Route::get('/course-classes/participants', [CourseApiController::class, 'getCourseClassesParticipants'])->name('course-classes.participants.get');
 
 Route::get('/course/coursebyklassenid', [CourseApiController::class, 'getCourseByKlassenId'])->name('course.get');
+
+
+Route::get('/assets/pruef-kennz-options', [AssetsApiController::class, 'getPruefKennzOptions'])->name('assets.pruef-kennz-options');
 
 
 Route::post('/sql', [SqlApiController::class, 'run'])->name('sql.run');

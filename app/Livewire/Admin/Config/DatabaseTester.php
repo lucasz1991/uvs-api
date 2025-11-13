@@ -6,13 +6,18 @@ use Livewire\Component;
 use Illuminate\Support\Facades\DB;
 use App\Models\Setting;
 use Throwable;
-use Illuminate\Support\Str;
 
 class DatabaseTester extends Component
 {
     public bool $connected = false;
     public string $errorMessage = '';
     public array $tables = [];
+
+    /**
+     * Wenn true, wird die Zeilenzahl per COUNT(*) exakt ermittelt (langsamer).
+     * Wenn false, wird TABLE_ROWS aus information_schema verwendet (schneller, aber geschätzt).
+     */
+    public bool $exactCounts = false;
 
     protected function connectFromSettings(): void
     {
@@ -26,6 +31,37 @@ class DatabaseTester extends Component
             'collation' => 'utf8mb4_unicode_ci',
             'prefix'    => '',
         ]]);
+    }
+
+    /** Sichere Quoting-Hilfe für Tabellennamen */
+    protected function tick(string $identifier): string
+    {
+        return '`' . str_replace('`', '``', $identifier) . '`';
+    }
+
+    /** Schnelle (geschätzte) Row-Counts als Map laden */
+    protected function loadEstimatedRowCounts(string $dbName): array
+    {
+        $rows = DB::connection('uvs')->select(
+            'SELECT TABLE_NAME, TABLE_ROWS
+               FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = ?',
+            [$dbName]
+        );
+
+        $map = [];
+        foreach ($rows as $r) {
+            $map[$r->TABLE_NAME] = is_null($r->TABLE_ROWS) ? null : (int) $r->TABLE_ROWS;
+        }
+        return $map;
+    }
+
+    /** Exakte Row-Counts (teurer) */
+    protected function loadExactRowCount(string $table): int
+    {
+        $tn = $this->tick($table);
+        $row = DB::connection('uvs')->selectOne("SELECT COUNT(*) AS c FROM {$tn}");
+        return (int)($row->c ?? 0);
     }
 
     public function testConnection(): void
@@ -43,12 +79,15 @@ class DatabaseTester extends Component
 
             // Alle Tabellen holen
             $tables = DB::connection('uvs')->select(
-                'SELECT TABLE_NAME 
-                   FROM information_schema.TABLES 
-                  WHERE TABLE_SCHEMA = ? 
+                'SELECT TABLE_NAME
+                   FROM information_schema.TABLES
+                  WHERE TABLE_SCHEMA = ?
                ORDER BY TABLE_NAME',
                 [$dbName]
             );
+
+            // Geschätzte Counts im Bulk (schnell)
+            $estimatedMap = $this->loadEstimatedRowCounts($dbName);
 
             $result = [];
             foreach ($tables as $t) {
@@ -96,9 +135,15 @@ class DatabaseTester extends Component
                     ];
                 }
 
+                // Row-Count wählen
+                $estimated = $estimatedMap[$tableName] ?? null;
+                $rowCount  = $this->exactCounts ? $this->loadExactRowCount($tableName) : $estimated;
+
                 $result[] = [
-                    'name'    => $tableName,
-                    'columns' => $columns,
+                    'name'           => $tableName,
+                    'row_count'      => $rowCount,                          // int|null
+                    'row_count_type' => $this->exactCounts ? 'exact' : 'estimated',
+                    'columns'        => $columns,
                 ];
             }
 
@@ -129,21 +174,25 @@ class DatabaseTester extends Component
             $lines[] = str_repeat('=', 70);
 
             foreach ($this->tables as $table) {
-                $lines[] = "Tabelle: {$table['name']} (" . count($table['columns']) . ' Spalten)';
+                $cntInfo = isset($table['row_count'])
+                    ? " | Rows ({$table['row_count_type']}): " . ($table['row_count'] ?? 'n/a')
+                    : '';
+                $lines[] = "Tabelle: {$table['name']} (" . count($table['columns']) . " Spalten){$cntInfo}";
+
                 foreach ($table['columns'] as $col) {
-                    $len     = $col['length'] ?? '';
-                    $type    = $col['type'] . ($len !== '' ? "({$len})" : '');
-                    $nullable= $col['nullable'] ? 'NULL' : 'NOT NULL';
-                    $default = is_null($col['default']) ? '' : ' DEFAULT ' . $col['default'];
-                    $key     = $col['key']   ? ' KEY:' . $col['key'] : '';
-                    $extra   = $col['extra'] ? ' ' . $col['extra'] : '';
+                    $len      = $col['length'] ?? '';
+                    $type     = $col['type'] . ($len !== '' ? "({$len})" : '');
+                    $nullable = $col['nullable'] ? 'NULL' : 'NOT NULL';
+                    $default  = is_null($col['default']) ? '' : ' DEFAULT ' . $col['default'];
+                    $key      = $col['key']   ? ' KEY:' . $col['key'] : '';
+                    $extra    = $col['extra'] ? ' ' . $col['extra'] : '';
 
                     $lines[] = "  - {$col['name']} : {$type} {$nullable}{$default}{$key}{$extra}";
                 }
                 $lines[] = ''; // Leerzeile zwischen Tabellen
             }
 
-            // Optional: BOM für Notepad-Kompatibilität auf Windows
+            // Optional: BOM für Windows-Notepad
             $content  = "\xEF\xBB\xBF" . implode(PHP_EOL, $lines);
 
             $filename = 'uvs_schema_' . now()->format('Ymd_His') . '.txt';
@@ -157,7 +206,6 @@ class DatabaseTester extends Component
             $this->errorMessage = $e->getMessage();
         }
     }
-
 
     public function render()
     {
