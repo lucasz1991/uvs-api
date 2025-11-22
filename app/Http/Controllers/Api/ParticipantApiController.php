@@ -185,31 +185,43 @@ class ParticipantApiController extends BaseUvsController
         }
     }
 
-    public function get(Request $request)
-    {
-        $this->connectToUvsDatabase();
-        $person_mail = $request->query('mail');
-        if (!$person_mail) {
-            return response()->json(['message' => 'mail is required'], 400);
-        }
-
-        $db = DB::connection('uvs');
-        $person = $db->table('person')->where('email_priv', $person_mail)->first();
-        if (!$person) {
-            return response()->json(['message' => 'Person not found'], 404);
-        }
-
-        activity('uvs')
-            ->causedBy($request->user())
-            ->withProperties([
-                'event'         => 'participant.retrieved',
-                'institut_id'   => $person->institut_id,
-                'person_id'     => $person->person_id,
-            ])
-            ->log('Participant data retrieved');
-
-        return response()->json(['person' => $person]);
+public function get(Request $request)
+{
+    $this->connectToUvsDatabase();
+    $person_mail = $request->query('mail');
+    if (!$person_mail) {
+        return response()->json(['message' => 'mail is required'], 400);
     }
+
+    $db = DB::connection('uvs');
+
+    // ALLE Personen mit dieser Mail holen
+    $persons = $db->table('person')
+        ->where('email_priv', $person_mail)
+        ->orderBy('institut_id')   // optional, macht nur die Ausgabe schöner
+        ->get();
+
+    if ($persons->isEmpty()) {
+        return response()->json(['message' => 'Person not found'], 404);
+    }
+
+    activity('uvs')
+        ->causedBy($request->user())
+        ->withProperties([
+            'event'        => 'participant.retrieved_multi',
+            'mail'         => $this->maskEmail($person_mail),
+            'count'        => $persons->count(),
+            'person_ids'   => $persons->pluck('person_id')->all(),
+            'institut_ids' => $persons->pluck('institut_id')->all(),
+        ])
+        ->log('Participant data (multi) retrieved');
+
+    // Response jetzt als Liste zurückgeben
+    return response()->json([
+        'persons' => $persons,
+    ]);
+}
+
 
     public function getParticipantAndQualiprogram(Request $request, string $person_id)
     {
