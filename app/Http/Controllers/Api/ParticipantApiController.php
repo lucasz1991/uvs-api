@@ -188,7 +188,8 @@ class ParticipantApiController extends BaseUvsController
 public function get(Request $request)
 {
     $this->connectToUvsDatabase();
-    $person_mail = $request->query('mail');
+    $person_mail = trim((string) $request->query('mail'));
+
     if (!$person_mail) {
         return response()->json(['message' => 'mail is required'], 400);
     }
@@ -196,8 +197,15 @@ public function get(Request $request)
     $db = DB::connection('uvs');
 
     // ALLE Personen mit dieser Mail holen
+    // Berücksichtigt auch zusammengesetzte Mails wie "a@b.de/c@d.de"
     $persons = $db->table('person')
-        ->where('email_priv', $person_mail)
+        ->whereNotNull('email_priv')
+        ->where(function ($q) use ($person_mail) {
+            $q->where('email_priv', $person_mail)
+              ->orWhere('email_priv', 'like', $person_mail . '/%')   // steht am Anfang
+              ->orWhere('email_priv', 'like', '%/' . $person_mail)   // steht am Ende
+              ->orWhere('email_priv', 'like', '%/' . $person_mail . '/%'); // steht in der Mitte
+        })
         ->orderBy('institut_id')   // optional, macht nur die Ausgabe schöner
         ->get();
 
