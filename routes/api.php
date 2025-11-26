@@ -33,8 +33,10 @@ Route::get('/course-classes/participants', [CourseApiController::class, 'getCour
 
 Route::get('/course/coursebyklassenid', [CourseApiController::class, 'getCourseByKlassenId'])->name('course.get');
 
+Route::get('/course/day-attendance', [CourseApiController::class, 'getCourseDayAttendanceData'])->name('course.day-attendance.get');
 
-Route::get('/assets/pruef-kennz-options', [AssetsApiController::class, 'getPruefKennzOptions'])->name('assets.pruef-kennz-options');
+Route::post('/course/courseday/syncattendancedata', [CourseApiController::class, 'syncCourseDayAttendanceData'])->name('course.day-attendance.sync');
+
 
 
 Route::post('/sql', [SqlApiController::class, 'run'])->name('sql.run');
