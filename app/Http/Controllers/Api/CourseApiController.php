@@ -292,36 +292,47 @@ class CourseApiController extends BaseUvsController
 public function syncCourseDayAttendanceData(Request $request)
 {
     Log::info('syncCourseDayAttendanceData called', ['request' => $request->all()]);
-    // 1) Basis-Validierung
-    $data = $request->validate([
-        'teilnehmer_ids'    => 'sometimes|array|min:1',
-        'teilnehmer_ids.*'  => 'string|max:25',
-        'termin_id'         => 'sometimes|string|max:25',
-        'date'              => 'sometimes|date_format:Y-m-d',
 
-        // optionale Änderungen aus dem Schulnetz
-        'changes'                   => 'sometimes|array|min:1',
-        'changes.*.teilnehmer_id'   => 'required_with:changes|string|max:25',
-        'changes.*.institut_id'     => 'sometimes|integer',
-        'changes.*.termin_id'       => 'sometimes|string|max:25',
-        'changes.*.date'            => 'sometimes|date_format:Y-m-d',
-        'changes.*.fehl_grund'      => 'sometimes|string|max:4',
-        'changes.*.fehl_bem'        => 'sometimes|string|max:75',
-        'changes.*.gekommen'        => 'sometimes|string|max:5',
-        'changes.*.gegangen'        => 'sometimes|string|max:5',
-        'changes.*.fehl_std'        => 'sometimes|numeric',
-        'changes.*.status'          => 'sometimes|integer',
-        'changes.*.upd_user'        => 'sometimes|string|max:50',
-        // tn_fehltage_id kann mitkommen, muss aber nicht – wird sonst gebaut
-        'changes.*.tn_fehltage_id'  => 'sometimes|string|max:27',
-    ]);
+    /*
+    |--------------------------------------------------------------------------
+    | 1) VALIDIERUNG
+    |--------------------------------------------------------------------------
+    */
+$data = $request->validate([
+    'teilnehmer_ids'           => 'required|array',
+    'teilnehmer_ids.*'         => 'required|string|max:25',
+
+    'termin_id'                => 'required|string|max:25',
+    'date'                     => 'required|date_format:Y-m-d',
+
+    'changes'                  => 'sometimes|array',
+
+    // Basis für alle Changes
+    'changes.*.teilnehmer_id'  => 'required_with:changes|string|max:25',
+    'changes.*.termin_id'      => 'nullable|string|max:25',
+    'changes.*.date'           => 'nullable|date_format:Y-m-d',
+    'changes.*.institut_id'    => 'nullable|integer',
+
+    // Aktion: create/update/delete
+    'changes.*.action'         => 'nullable|string|in:create,update,delete',
+
+    // Detailfelder – dürfen leer sein (werden gleich im Code geprüft)
+    'changes.*.fehl_grund'     => 'nullable|string|max:4',
+    'changes.*.fehl_bem'       => 'nullable|string|max:75',
+    'changes.*.gekommen'       => 'nullable|string|max:5',
+    'changes.*.gegangen'       => 'nullable|string|max:5',
+    'changes.*.fehl_std'       => 'nullable|numeric',
+    'changes.*.status'         => 'nullable|integer',
+    'changes.*.upd_user'       => 'nullable|string|max:50',
+    'changes.*.tn_fehltage_id' => 'nullable|string|max:27',
+]);
+
 
     $teilnehmerIds = $data['teilnehmer_ids'] ?? null;
     $terminId      = $data['termin_id']      ?? null;
     $dateFilter    = $data['date']           ?? null;
     $changes       = $data['changes']        ?? [];
 
-    // Mindestens eines der drei Filter muss gesetzt sein
     if (empty($terminId) && empty($teilnehmerIds) && empty($dateFilter)) {
         throw ValidationException::withMessages([
             'termin_id' => 'Mindestens eines der Felder termin_id, teilnehmer_ids oder date muss gesetzt sein.',
@@ -332,10 +343,9 @@ public function syncCourseDayAttendanceData(Request $request)
 
     /*
     |--------------------------------------------------------------------------
-    | 1) REMOTE → LOCAL: tn_fehl lesen
+    | 2) REMOTE → LOCAL: tn_fehl lesen (PULL)
     |--------------------------------------------------------------------------
     */
-
     $q = DB::connection('uvs')->table('tn_fehl');
 
     if (!empty($terminId)) {
@@ -376,25 +386,25 @@ public function syncCourseDayAttendanceData(Request $request)
     $items = $rows->map(function ($row) {
         $isoDate = null;
         if (!empty($row->fehl_datum) && preg_match('#^\d{4}/\d{2}/\d{2}$#', $row->fehl_datum)) {
-            $isoDate = str_replace('/', '-', $row->fehl_datum);
+            $isoDate = str_replace('/', '-', $row->fehl_datum); // YYYY-MM-DD
         }
 
         return [
             'uid'              => (int) $row->uid,
-            'tn_fehltage_id'   => $row->tn_fehltage_id,
+            'tn_fehltage_id'   => (string) $row->tn_fehltage_id,
             'ec_tag_id'        => (int) $row->ec_tag_id,
-            'teilnehmer_id'    => $row->teilnehmer_id,
+            'teilnehmer_id'    => (string) $row->teilnehmer_id,
             'institut_id'      => (int) $row->institut_id,
-            'termin_id'        => $row->termin_id,
+            'termin_id'        => (string) $row->termin_id,
             'status'           => (int) $row->status,
-            'upd_date_raw'     => $row->upd_date,
-            'upd_user'         => $row->upd_user,
-            'fehl_datum_raw'   => $row->fehl_datum,
+            'upd_date_raw'     => (string) $row->upd_date,
+            'upd_user'         => (string) $row->upd_user,
+            'fehl_datum_raw'   => (string) $row->fehl_datum,
             'fehl_datum_iso'   => $isoDate,
-            'fehl_grund'       => $row->fehl_grund,
-            'fehl_bem'         => $row->fehl_bem,
-            'gekommen'         => $row->gekommen,
-            'gegangen'         => $row->gegangen,
+            'fehl_grund'       => (string) $row->fehl_grund,
+            'fehl_bem'         => (string) $row->fehl_bem,
+            'gekommen'         => (string) $row->gekommen,
+            'gegangen'         => (string) $row->gegangen,
             'fehl_std'         => (float) $row->fehl_std,
         ];
     });
@@ -408,107 +418,136 @@ public function syncCourseDayAttendanceData(Request $request)
 
     /*
     |--------------------------------------------------------------------------
-    | 2) LOCAL → REMOTE: changes in tn_fehl schreiben
-    |    Regel: pro (teilnehmer_id, termin_id, fehl_datum) max. 1 Datensatz.
-    |    => existiert so einer → UPDATE, sonst INSERT.
+    | 3) LOCAL → REMOTE: changes in tn_fehl schreiben (PUSH)
     |--------------------------------------------------------------------------
     */
 
     $pushed = null;
 
-    if (!empty($changes)) {
-        $results = [];
+if (!empty($changes)) {
+    $results = [];
 
-        foreach ($changes as $change) {
-            // Effektive Parameter: wir erlauben Override pro Change,
-            // fallen sonst auf globale termin_id / date zurück.
-            $teilnehmerId = $change['teilnehmer_id'] ?? null;
-            $cTermin      = $change['termin_id']     ?? $terminId;
-            $cDate        = $change['date']          ?? $dateFilter;
+    foreach ($changes as $change) {
+        $teilnehmerId = $change['teilnehmer_id'] ?? null;
+        $cTermin      = $change['termin_id']     ?? $terminId;
+        $cDate        = $change['date']          ?? $dateFilter;
+        $action       = $change['action']        ?? null; // create|update|delete|null
 
-            if (!$teilnehmerId || !$cTermin || !$cDate) {
-                $results[] = [
-                    'teilnehmer_id' => $teilnehmerId,
-                    'date'          => $cDate,
-                    'action'        => 'skipped',
-                    'reason'        => 'teilnehmer_id, termin_id oder date fehlen',
-                ];
-                continue;
-            }
-
-            $fehlDatum = str_replace('-', '/', $cDate); // "YYYY/MM/DD"
-            $institutId = $change['institut_id'] ?? 0;
-
-            // tn_fehltage_id-Regel: teilnehmer_id . '-' . termin_id
-            $tnFehltageId = $change['tn_fehltage_id']
-                ?? ($teilnehmerId . '-' . $cTermin);
-
-            // Bestehenden Datensatz für diese Kombination suchen
-            $existing = DB::connection('uvs')
-                ->table('tn_fehl')
-                ->where('teilnehmer_id', $teilnehmerId)
-                ->where('termin_id', $cTermin)
-                ->where('fehl_datum', $fehlDatum)
-                ->orderBy('uid', 'desc')
-                ->first();
-
-            $payload = [
-                'tn_fehltage_id' => $tnFehltageId,
-                'ec_tag_id'      => 0,
-                'teilnehmer_id'  => $teilnehmerId,
-                'institut_id'    => $institutId,
-                'termin_id'      => $cTermin,
-                'status'         => 0,
-                'upd_date'       => now()->format('Y/m/d'),
-                'upd_user'       => $change['upd_user'] ?? 'BausteinDozent',
-                'fehl_datum'     => $fehlDatum,
-                'fehl_grund'     => $change['fehl_grund'] ?? '',
-                'fehl_bem'       => $change['fehl_bem'] ?? '',
-                'gekommen'       => $change['gekommen'] ?? '00:00',
-                'gegangen'       => $change['gegangen'] ?? '00:00',
-                'fehl_std'       => $change['fehl_std'] ?? 0,
+        if (!$teilnehmerId || !$cTermin || !$cDate) {
+            $results[] = [
+                'teilnehmer_id' => $teilnehmerId,
+                'date'          => $cDate,
+                'action'        => 'skipped',
+                'reason'        => 'teilnehmer_id, termin_id oder date fehlen',
             ];
+            continue;
+        }
 
+        $fehlDatum  = str_replace('-', '/', $cDate); // "YYYY/MM/DD"
+        $institutId = $change['institut_id'] ?? 0;
+
+        $tnFehltageId = $change['tn_fehltage_id']
+            ?? ($teilnehmerId . '-' . $cTermin);
+
+        // Bestehenden Datensatz suchen
+        $existing = DB::connection('uvs')
+            ->table('tn_fehl')
+            ->where('teilnehmer_id', $teilnehmerId)
+            ->where('termin_id', $cTermin)
+            ->where('fehl_datum', $fehlDatum)
+            ->orderBy('uid', 'desc')
+            ->first();
+
+        // ----------------------------------------------------
+        // DELETE-Pfad
+        // ----------------------------------------------------
+        if ($action === 'delete') {
             if ($existing) {
-                // UPDATE: es existiert bereits genau diese Kombination
                 DB::connection('uvs')
                     ->table('tn_fehl')
                     ->where('uid', $existing->uid)
-                    ->update($payload);
+                    ->delete();
 
                 $results[] = [
                     'uid'           => (int) $existing->uid,
-                    'action'        => 'updated',
-                    'teilnehmer_id' => $teilnehmerId,
+                    'tn_fehltage_id'=> (string) $existing->tn_fehltage_id,
+                    'teilnehmer_id' => (string) $teilnehmerId,
                     'date'          => $cDate,
+                    'action'        => 'deleted',
                 ];
             } else {
-                // INSERT: kein Datensatz für (teilnehmer_id, termin_id, fehl_datum)
-                $newUid = DB::connection('uvs')
-                    ->table('tn_fehl')
-                    ->insertGetId($payload);
-
+                // nichts zu löschen – zur Info zurückgeben
                 $results[] = [
-                    'uid'           => (int) $newUid,
-                    'action'        => 'created',
-                    'teilnehmer_id' => $teilnehmerId,
+                    'tn_fehltage_id'=> (string) $tnFehltageId,
+                    'teilnehmer_id' => (string) $teilnehmerId,
                     'date'          => $cDate,
+                    'action'        => 'noop_delete',
+                    'reason'        => 'Kein bestehender tn_fehl-Datensatz für diese Kombination gefunden.',
                 ];
             }
+
+            continue; // nächste Änderung
         }
 
-        $pushed = [
-            'changes_count' => count($changes),
-            'results'       => $results,
+        // ----------------------------------------------------
+        // CREATE/UPDATE-Pfad (wie bisher, leicht abgesichert)
+        // ----------------------------------------------------
+        $payload = [
+            'tn_fehltage_id' => $tnFehltageId,
+            'ec_tag_id'      => 0,
+            'teilnehmer_id'  => $teilnehmerId,
+            'institut_id'    => $institutId,
+            'termin_id'      => $cTermin,
+            'status'         => (int)($change['status'] ?? 1),
+            'upd_date'       => now()->format('Y/m/d'),
+            'upd_user'       => $change['upd_user'] ?? 'Baustein-Dozent (Schulnetz)',
+            'fehl_datum'     => $fehlDatum,
+            'fehl_grund'     => $change['fehl_grund'] ?? '',
+            'fehl_bem'       => $change['fehl_bem'] ?? '',
+            'gekommen'       => $change['gekommen'] ?? '00:00',
+            'gegangen'       => $change['gegangen'] ?? '00:00',
+            'fehl_std'       => $change['fehl_std'] ?? 0,
         ];
+
+        if ($existing) {
+            DB::connection('uvs')
+                ->table('tn_fehl')
+                ->where('uid', $existing->uid)
+                ->update($payload);
+
+            $results[] = [
+                'uid'           => (int) $existing->uid,
+                'tn_fehltage_id'=> $tnFehltageId,
+                'action'        => 'updated',
+                'teilnehmer_id' => $teilnehmerId,
+                'date'          => $cDate,
+            ];
+        } else {
+            $newUid = DB::connection('uvs')
+                ->table('tn_fehl')
+                ->insertGetId($payload);
+
+            $results[] = [
+                'uid'           => (int) $newUid,
+                'tn_fehltage_id'=> $tnFehltageId,
+                'action'        => 'created',
+                'teilnehmer_id' => $teilnehmerId,
+                'date'          => $cDate,
+            ];
+        }
     }
+
+    $pushed = [
+        'changes_count' => count($changes),
+        'results'       => $results,
+    ];
+}
 
     /*
     |--------------------------------------------------------------------------
-    | 3) RESPONSE
+    | 4) RESPONSE
     |--------------------------------------------------------------------------
     */
-
     return response()->json([
         'ok'   => true,
         'data' => [
