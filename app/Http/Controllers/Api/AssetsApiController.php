@@ -7,6 +7,45 @@ use Illuminate\Support\Facades\DB;
 
 class AssetsApiController extends BaseUvsController
 {
+
+    /**
+     * GET /api/assets/institutions
+     *
+     * Lädt die komplette Institut-Tabelle aus der UVS-Datenbank.
+     *
+     * Response (Beispiel):
+     * {
+     *   "ok": true,
+     *   "data": [
+     *      {
+     *          "institut_id": 1,
+     *          "name": "CBW Hamburg",
+     *          "strasse": "...",
+     *          "plz": "...",
+     *          "ort": "...",
+     *          ...
+     *      },
+     *      ...
+     *   ]
+     * }
+     */
+    public function getInstitutions(): JsonResponse
+    {
+        $this->connectToUvsDatabase();
+
+        // Falls Tabelle anders heißt, bitte anpassen (manchmal: instituts / institute)
+        $rows = DB::connection('uvs')
+            ->table('institut')
+            ->select('*')
+            ->orderBy('institut_id')
+            ->get();
+
+        return response()->json([
+            'ok'   => true,
+            'data' => $rows,
+        ]);
+    }
+
     /**
      * GET /api/assets/pruef-kennz-options
      *
