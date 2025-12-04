@@ -37,7 +37,9 @@ Route::get('/course/day-attendance', [CourseApiController::class, 'getCourseDayA
 
 Route::post('/course/courseday/syncattendancedata', [CourseApiController::class, 'syncCourseDayAttendanceData'])->name('course.day-attendance.sync');
 
-Route::post('/course/courseresults/syncdata',[CourseApiController::class, 'syncCourseResultsData'])->name('course.results.sync');
+Route::post('/course/courseresults/loaddata', [CourseApiController::class, 'loadCourseResultsData'])->name('course.results.load');
+Route::post('/course/courseresults/syncdata', [CourseApiController::class, 'syncCourseResultsData'])->name('course.results.sync');
+
 
 Route::get('/assets/institutions', [AssetsApiController::class, 'getInstitutions'])->name('assets.institutions.get');
 

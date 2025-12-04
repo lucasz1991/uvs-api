@@ -977,5 +977,121 @@ public function syncCourseResultsData(Request $request)
     ]);
 }
 
+public function loadCourseResultsData(Request $request)
+{
+    Log::info('loadCourseResultsData called', ['request' => $request->all()]);
+
+    /*
+    |----------------------------------------------------------------------
+    | 1) VALIDIERUNG
+    |----------------------------------------------------------------------
+    */
+    $data = $request->validate([
+        'termin_id'                => 'required|string|max:25',
+        'klassen_id'               => 'required|string|max:25',
+
+        'teilnehmer_ids'           => 'sometimes|array',
+        'teilnehmer_ids.*'         => 'string|max:25',
+    ]);
+
+    $terminId      = $data['termin_id'];
+    $klassenId     = $data['klassen_id'];
+    $teilnehmerIds = $data['teilnehmer_ids'] ?? [];
+
+    $this->connectToUvsDatabase();
+
+    /*
+    |----------------------------------------------------------------------
+    | 2) REMOTE → "LOCAL": tn_p_kla lesen (PULL ONLY)
+    |----------------------------------------------------------------------
+    |
+    | Wird für den LOAD-Modus im Schulnetz verwendet.
+    | Hier werden KEINE Änderungen in tn_p_kla geschrieben.
+    */
+    $q = DB::connection('uvs')
+        ->table('tn_p_kla')
+        ->where('termin_id', $terminId)
+        ->where('klassen_id', $klassenId)
+        ->where('deleted', '0'); // nur aktive Datensätze
+
+    if (! empty($teilnehmerIds)) {
+        $q->whereIn('teilnehmer_id', $teilnehmerIds);
+    }
+
+    $rows = $q
+        ->orderBy('teilnehmer_id')
+        ->orderBy('uid', 'desc')
+        ->get([
+            'uid',
+            'deleted',
+            'tn_baustein_id',
+            'teilnehmer_id',
+            'person_id',
+            'institut_id',
+            'teilnehmer_fnr',
+            'baust_term_id',
+            'termin_id',
+            'baustein_id',
+            'vtz_kennz_ba',
+            'kurzbez_ba',
+            'klassen_id',
+            'stammklassen_id',
+            'klassen_co_ks',
+            'status',
+            'upd_date',
+            'pruef_kennz',
+            'pruef_punkte',
+            'aktiv',
+        ]);
+
+    $items = $rows->map(function ($row) {
+        return [
+            'uid'             => (int) $row->uid,
+            'deleted'         => (string) $row->deleted,
+            'tn_baustein_id'  => (string) $row->tn_baustein_id,
+            'teilnehmer_id'   => (string) $row->teilnehmer_id,
+            'person_id'       => (string) $row->person_id,
+            'institut_id'     => (int) $row->institut_id,
+            'teilnehmer_fnr'  => (string) $row->teilnehmer_fnr,
+            'baust_term_id'   => (string) $row->baust_term_id,
+            'termin_id'       => (string) $row->termin_id,
+            'baustein_id'     => (string) $row->baustein_id,
+            'vtz_kennz_ba'    => (string) $row->vtz_kennz_ba,
+            'kurzbez_ba'      => (string) $row->kurzbez_ba,
+            'klassen_id'      => (string) $row->klassen_id,
+            'stammklassen_id' => (string) $row->stammklassen_id,
+            'klassen_co_ks'   => (string) $row->klassen_co_ks,
+            'status'          => (int) $row->status,
+            'upd_date'        => (string) $row->upd_date,
+            'pruef_kennz'     => (string) $row->pruef_kennz,
+            'pruef_punkte'    => (int) $row->pruef_punkte,
+            'aktiv'           => (string) $row->aktiv,
+        ];
+    });
+
+    $byParticipant = $items->groupBy('teilnehmer_id');
+
+    $pulled = [
+        'items'          => $items,
+        'by_participant' => $byParticipant,
+    ];
+
+    /*
+    |----------------------------------------------------------------------
+    | 3) RESPONSE
+    |----------------------------------------------------------------------
+    */
+    return response()->json([
+        'ok'   => true,
+        'data' => [
+            'termin_id'      => $terminId,
+            'klassen_id'     => $klassenId,
+            'teilnehmer_ids' => $teilnehmerIds,
+            'pulled'         => $pulled,
+        ],
+    ]);
+}
+
+
 
 }
