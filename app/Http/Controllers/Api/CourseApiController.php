@@ -455,9 +455,6 @@ class CourseApiController extends BaseUvsController
                 ->orderBy('uid', 'desc')
                 ->first();
 
-            // ----------------------------------------------------
-            // DELETE-Pfad
-            // ----------------------------------------------------
             if ($action === 'delete') {
                 if ($existing) {
                     DB::connection('uvs')
@@ -473,7 +470,6 @@ class CourseApiController extends BaseUvsController
                         'action'        => 'deleted',
                     ];
                 } else {
-                    // nichts zu löschen – zur Info zurückgeben
                     $results[] = [
                         'tn_fehltage_id'=> (string) $tnFehltageId,
                         'teilnehmer_id' => (string) $teilnehmerId,
@@ -511,7 +507,6 @@ class CourseApiController extends BaseUvsController
                     ->table('tn_fehl')
                     ->where('uid', $existing->uid)
                     ->update($payload);
-
                 $results[] = [
                     'uid'           => (int) $existing->uid,
                     'tn_fehltage_id'=> $tnFehltageId,
@@ -523,7 +518,6 @@ class CourseApiController extends BaseUvsController
                 $newUid = DB::connection('uvs')
                     ->table('tn_fehl')
                     ->insertGetId($payload);
-
                 $results[] = [
                     'uid'           => (int) $newUid,
                     'tn_fehltage_id'=> $tnFehltageId,
@@ -533,7 +527,6 @@ class CourseApiController extends BaseUvsController
                 ];
             }
         }
-
         $pushed = [
             'changes_count' => count($changes),
             'results'       => $results,
