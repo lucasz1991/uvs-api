@@ -3,9 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
-use App\Models\Setting;
+use Illuminate\Support\Facades\DB;
 
 class PersonApiController extends BaseUvsController
 {
@@ -21,112 +20,160 @@ class PersonApiController extends BaseUvsController
 
         $this->connectToUvsDatabase();
 
-        // person_id aufsplitten: institut_id - person_nr
         $personId = $data['person_id'];
         if (!str_contains($personId, '-')) {
             return response()->json([
                 'ok'    => false,
-                'error' => 'Ungültiges person_id-Format. Erwartet: {institut_id}-{person_nr}',
+                'error' => 'Ungueltiges person_id-Format. Erwartet: {institut_id}-{person_nr}',
             ], 422);
         }
 
         [$institutId, $personNr] = explode('-', $personId, 2);
 
-        // --- Teilnehmer-Abfrage (tvertrag) ---
-        // Nimmt den neuesten Vertrag (ORDER BY vertrag_ende DESC LIMIT 1)
-        $vertrag = DB::connection('uvs')->table('tvertrag AS tv')
+        // UVS date parser for multiple input formats
+        $parseDate = function ($value) {
+            if (!$value) {
+                return null;
+            }
+
+            $raw = trim((string) $value);
+            if ($raw === '') {
+                return null;
+            }
+
+            foreach (['Y-m-d', 'Y/m/d', 'd/m/Y', 'd-m-Y'] as $format) {
+                try {
+                    return Carbon::createFromFormat($format, $raw)->startOfDay();
+                } catch (\Throwable $e) {
+                    // try next
+                }
+            }
+
+            try {
+                return Carbon::parse(str_replace('/', '-', $raw))->startOfDay();
+            } catch (\Throwable $e) {
+                return null;
+            }
+        };
+
+        $today = Carbon::today();
+
+        // Load participant contracts including cancelled ones.
+        // xvertrag/ivertrag are 1:n, so we deduplicate after mapping.
+        $vertragRows = DB::connection('uvs')->table('tvertrag AS tv')
             ->leftJoin('xvertrag AS xv', 'xv.teilnehmer_id', '=', 'tv.teilnehmer_id')
             ->leftJoin('ivertrag AS iv', 'iv.beratung_id', '=', 'xv.beratung_id')
             ->where('tv.person_nr', $personNr)
             ->where('tv.institut_id', $institutId)
-            ->where(function ($query) {
-                $query->whereNull('iv.kuendig_zum')
-                      ->orWhere('iv.kuendig_zum', '')
-                      ->orWhereRaw(
-                          "STR_TO_DATE(iv.kuendig_zum, '%d/%m/%Y') > ?",
-                          [Carbon::today()->toDateString()]
-                      );
-            })
             ->orderByDesc('tv.vertrag_ende')
-            ->select('tv.*')
+            ->select([
+                'tv.teilnehmer_id',
+                'tv.teilnehmer_nr',
+                'tv.letzter_tag',
+                'tv.vertrag_ende',
+                'iv.kuendig_zum',
+            ])
+            ->get()
+            ->map(function ($row) use ($parseDate, $today) {
+                $kuendigDate = $parseDate($row->kuendig_zum ?? null);
+                $vertragEndeDate = $parseDate($row->vertrag_ende ?? null);
+
+                return [
+                    'teilnehmer_id' => $row->teilnehmer_id ?? null,
+                    'teilnehmer_nr' => $row->teilnehmer_nr ?? null,
+                    'letzter_tag' => $row->letzter_tag ?? null,
+                    'vertrag_ende' => $row->vertrag_ende ?? null,
+                    'kuendig_zum' => $row->kuendig_zum ?? null,
+                    'is_active' => is_null($kuendigDate) || $kuendigDate->gt($today),
+                    '_kuendig_ts' => $kuendigDate?->timestamp ?? 0,
+                    '_vertrag_ende_ts' => $vertragEndeDate?->timestamp ?? 0,
+                ];
+            })
+            ->groupBy(function ($row) {
+                return implode('|', [
+                    $row['teilnehmer_id'] ?? '',
+                    $row['teilnehmer_nr'] ?? '',
+                    $row['letzter_tag'] ?? '',
+                    $row['vertrag_ende'] ?? '',
+                ]);
+            })
+            ->map(function ($rows) {
+                return $rows
+                    ->sortByDesc(function ($row) {
+                        $hasKuendig = trim((string) ($row['kuendig_zum'] ?? '')) !== '';
+                        return ($hasKuendig ? 1 : 0) * 10000000000 + ($row['_kuendig_ts'] ?? 0);
+                    })
+                    ->first();
+            })
+            ->values();
+
+        // Selection rule:
+        // 1) Active contract with largest vertrag_ende
+        // 2) Otherwise latest cancelled contract
+        $selectedVertrag = $vertragRows
+            ->where('is_active', true)
+            ->sortByDesc('_vertrag_ende_ts')
             ->first();
 
-        $teilnehmerNr   = null;
-        $lastTnDatumStr = null; // letzter_tag (String wie in UVS)
-        if ($vertrag) {
-            $teilnehmerNr   = $vertrag->teilnehmer_nr ?? null;
-            $lastTnDatumStr = $vertrag->letzter_tag ?? null;
+        if (!$selectedVertrag) {
+            $selectedVertrag = $vertragRows
+                ->sortByDesc('_vertrag_ende_ts')
+                ->first();
         }
 
-        // --- Absolventen-Abfrage (absolven) ---
-        // Neueste Absolventen-Zeile nach absolvent_id DESC
+        $teilnehmerNr = $selectedVertrag['teilnehmer_nr'] ?? null;
+        $lastTnDatumStr = $selectedVertrag['letzter_tag'] ?? null;
+        $vertragKuendigZum = $selectedVertrag['kuendig_zum'] ?? null;
+
         $absolvent = DB::connection('uvs')->table('absolven')
             ->where('person_id', $personId)
             ->orderByDesc('absolvent_id')
             ->first();
 
-        $absolventNr   = null; // rechte Seite aus "absolvent_id" (pers_inst_id-ab_nr)
-        $lastAbsStr    = null; // ab_ende
+        $absolventNr = null;
+        $lastAbsStr = null;
         if ($absolvent) {
-            $absId = $absolvent->absolvent_id ?? null; // z.B. "1-0026419001"
+            $absId = $absolvent->absolvent_id ?? null;
             if ($absId && str_contains($absId, '-')) {
                 [, $absolventNr] = explode('-', $absId, 2);
             }
             $lastAbsStr = $absolvent->ab_ende ?? null;
         }
 
-        // --- Mitarbeiter-Abfrage (mitarbei) ---
         $mitarbeiter = DB::connection('uvs')->table('mitarbei')
             ->where('person_id', $personId)
             ->first();
 
         $mitarbeiterNr = null;
         if ($mitarbeiter) {
-            // alte Logik: person_nr . mitarbeiter_fnr
             $mitarbeiterNr = $personNr . ($mitarbeiter->mitarbeiter_fnr ?? '');
         }
 
-        // Hilfsparser (YYYY-MM-DD oder YYYY/MM/DD)
-        $parseDate = function ($value) {
-            if (!$value) return null;
-            try {
-                return Carbon::parse(str_replace('/', '-', $value))->startOfDay();
-            } catch (\Throwable $e) {
-                return null;
-            }
-        };
-
-        $lastTnDate  = $parseDate($lastTnDatumStr);
+        $lastTnDate = $parseDate($lastTnDatumStr);
         $lastAbsDate = $parseDate($lastAbsStr);
 
-        // Für Vergleich: null -> 0
-        $tnTs  = $lastTnDate?->timestamp ?? 0;
+        $tnTs = $lastTnDate?->timestamp ?? 0;
         $absTs = $lastAbsDate?->timestamp ?? 0;
 
-        // Status bestimmen (wie im alten Skript)
-        // - Wenn beides 0 -> Interessent (+ interessent_nr = person_nr.'00')
-        // - Sonst: größerer Timestamp gewinnt; bei Gleichheit -> Absolvent
-        $personStatus = null;       // "Teilnehmer" | "Absolvent" | "Interessent"
-        $personStatusShort = null;  // "TN" | "AB" | "IN"
+        $personStatus = null;
+        $personStatusShort = null;
         $interessentNr = null;
 
         if ($tnTs === 0 && $absTs === 0) {
-            $personStatus      = 'Interessent';
+            $personStatus = 'Interessent';
             $personStatusShort = 'IN';
-            $interessentNr     = $personNr . '00';
+            $interessentNr = $personNr . '00';
         } elseif ($tnTs > $absTs) {
-            $personStatus      = 'Teilnehmer';
+            $personStatus = 'Teilnehmer';
             $personStatusShort = 'TN';
         } elseif ($absTs > $tnTs) {
-            $personStatus      = 'Absolvent';
+            $personStatus = 'Absolvent';
             $personStatusShort = 'AB';
-        } else { // Gleichheit
-            $personStatus      = 'Absolvent';
+        } else {
+            $personStatus = 'Absolvent';
             $personStatusShort = 'AB';
         }
 
-        // Optionale Person-Stammdaten (falls du sie brauchst)
-        // (Im alten Skript wurde nur mit Session gearbeitet; hier als saubere Ergänzung:)
         $person = DB::connection('uvs')->table('person')
             ->where('person_id', $personId)
             ->first();
@@ -138,19 +185,29 @@ class PersonApiController extends BaseUvsController
                 'institut_id'      => $institutId,
                 'person_nr'        => $personNr,
 
-                'status'           => $personStatus,        // "Teilnehmer" | "Absolvent" | "Interessent"
-                'status_short'     => $personStatusShort,   // "TN" | "AB" | "IN"
+                'status'           => $personStatus,
+                'status_short'     => $personStatusShort,
 
                 'teilnehmer_nr'    => $teilnehmerNr,
                 'absolvent_nr'     => $absolventNr,
                 'interessent_nr'   => $interessentNr,
                 'mitarbeiter_nr'   => $mitarbeiterNr,
 
-                // Für Transparenz/Debug
-                'last_teilnehmer_tag' => $lastTnDatumStr,   // original String aus UVS (letzter_tag)
-                'last_absolvent_ende' => $lastAbsStr,       // original String aus UVS (ab_ende)
+                'vertrag_kuendig_zum' => $vertragKuendigZum,
+                'last_teilnehmer_tag' => $lastTnDatumStr,
+                'last_absolvent_ende' => $lastAbsStr,
 
-                // optional: ein paar Stammdaten zurückgeben, wenn vorhanden
+                'vertraege' => $vertragRows
+                    ->map(fn($v) => [
+                        'teilnehmer_id' => $v['teilnehmer_id'],
+                        'teilnehmer_nr' => $v['teilnehmer_nr'],
+                        'letzter_tag' => $v['letzter_tag'],
+                        'vertrag_ende' => $v['vertrag_ende'],
+                        'kuendig_zum' => $v['kuendig_zum'],
+                        'is_active' => $v['is_active'],
+                    ])
+                    ->values(),
+
                 'person' => $person ? [
                     'name'        => $person->name ?? null,
                     'geschlecht'  => $person->geschlecht ?? null,
