@@ -34,10 +34,21 @@ class PersonApiController extends BaseUvsController
 
         // --- Teilnehmer-Abfrage (tvertrag) ---
         // Nimmt den neuesten Vertrag (ORDER BY vertrag_ende DESC LIMIT 1)
-        $vertrag = DB::connection('uvs')->table('tvertrag')
-            ->where('person_nr', $personNr)
-            ->where('institut_id', $institutId)
-            ->orderByDesc('vertrag_ende')
+        $vertrag = DB::connection('uvs')->table('tvertrag AS tv')
+            ->leftJoin('xvertrag AS xv', 'xv.teilnehmer_id', '=', 'tv.teilnehmer_id')
+            ->leftJoin('ivertrag AS iv', 'iv.beratung_id', '=', 'xv.beratung_id')
+            ->where('tv.person_nr', $personNr)
+            ->where('tv.institut_id', $institutId)
+            ->where(function ($query) {
+                $query->whereNull('iv.kuendig_zum')
+                      ->orWhere('iv.kuendig_zum', '')
+                      ->orWhereRaw(
+                          "STR_TO_DATE(iv.kuendig_zum, '%d/%m/%Y') > ?",
+                          [Carbon::today()->toDateString()]
+                      );
+            })
+            ->orderByDesc('tv.vertrag_ende')
+            ->select('tv.*')
             ->first();
 
         $teilnehmerNr   = null;

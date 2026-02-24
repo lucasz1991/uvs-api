@@ -251,6 +251,15 @@ public function get(Request $request)
                 ->leftJoin('tvertrag AS tv', 'tv.teilnehmer_id', '=', 'xv.teilnehmer_id')
                 ->leftJoin('person AS p', 'p.person_id', '=', 'iv.person_id')
                 ->where('p.person_id', $person_id)
+                //  falls kuendigung (kuendig_datum) yyyy/mm/dd gesetzt dann ignorieren aber wenn gesetzt erst ab dem kuendig_zum dd/mm/yyyy Datum
+                ->where(function ($query) {
+                    $query->whereNull('iv.kuendig_zum')
+                          ->orWhere('iv.kuendig_zum', '')
+                          ->orWhereRaw(
+                              "STR_TO_DATE(iv.kuendig_zum, '%d/%m/%Y') > ?",
+                              [Carbon::today()->toDateString()]
+                          );
+                })
                 ->orderByDesc('tv.vertrag_beginn')
                 ->select('xv.beratung_id')
                 ->first();

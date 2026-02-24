@@ -225,9 +225,6 @@ class CourseApiController extends BaseUvsController
         $courseDays = DB::connection('uvs')
             ->table('termtag as tt')
             ->where('tt.termin_id', $course->termin_id)
-            ->when(!empty($course->institut_id_ks), fn($q) =>
-                $q->where('tt.institut_id', $course->institut_id_ks)
-            )
             ->whereNotNull('tt.art')
             ->where('tt.art', 'B')
             ->orderByRaw("STR_TO_DATE(tt.datum, '%Y-%m-%d') ASC")
