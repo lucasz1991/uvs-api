@@ -1189,4 +1189,160 @@ class CourseApiController extends BaseUvsController
             ],
         ]);
     }
+
+    /**
+     * POST /api/course/ratings/syncdata
+     *
+     * Speichert nur Aggregatwerte in `ma_u_kla`.
+     * Erwartet die gesammelten Kursbewertungen als Batch (`ratings`).
+     */
+    public function syncCourseParticipantRating(Request $request)
+    {
+        $data = $request->validate([
+            'klassen_id'     => 'required|string|max:25',
+            'termin_id'      => 'required|string|max:25',
+            'mitarbeiter_id' => 'required|string|max:25',
+            'ratings'        => 'required|array|min:1',
+            'ratings.*.bew_id'   => 'required|string|max:64',
+            'ratings.*.bew_note' => 'required|integer|min:1|max:5',
+            'ratings.*.teilnehmer_id' => 'sometimes|nullable|string|max:25',
+        ]);
+
+        $this->connectToUvsDatabase();
+
+        $klassenId     = (string) $data['klassen_id'];
+        $terminId      = (string) $data['termin_id'];
+        $mitarbeiterId = (string) $data['mitarbeiter_id'];
+        $ratings       = $data['ratings'];
+
+        return DB::connection('uvs')->transaction(function () use ($ratings, $klassenId, $terminId, $mitarbeiterId) {
+            $mappingByPrefix = [
+                'kb_' => ['count_prefix' => 'org_n',  'total_col' => 'org_n_anz',  'avg_col' => 'org_schnitt'],
+                'do_' => ['count_prefix' => 'doz_n',  'total_col' => 'doz_n_anz',  'avg_col' => 'doz_schnitt'],
+                'il_' => ['count_prefix' => 'bew3_n', 'total_col' => 'bew3_n_anz', 'avg_col' => 'bew3_schnitt'],
+                'sa_' => ['count_prefix' => 'bew4_n', 'total_col' => 'bew4_n_anz', 'avg_col' => 'bew4_schnitt'],
+            ];
+
+            $aggregates = [];
+            foreach ($ratings as $idx => $rating) {
+                $bewId = trim((string) ($rating['bew_id'] ?? ''));
+                $note = (int) ($rating['bew_note'] ?? 0);
+
+                if (!preg_match('/^[A-Za-z0-9_]+$/', $bewId)) {
+                    throw ValidationException::withMessages([
+                        "ratings.{$idx}.bew_id" => 'Ungültiges Bewertungsfeld.',
+                    ]);
+                }
+
+                $prefix = null;
+                foreach (array_keys($mappingByPrefix) as $candidate) {
+                    if (str_starts_with($bewId, $candidate)) {
+                        $prefix = $candidate;
+                        break;
+                    }
+                }
+
+                if (!$prefix) {
+                    throw ValidationException::withMessages([
+                        "ratings.{$idx}.bew_id" => 'bew_id muss mit kb_, do_, il_ oder sa_ beginnen.',
+                    ]);
+                }
+
+                if (!isset($aggregates[$prefix])) {
+                    $aggregates[$prefix] = [1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0];
+                }
+
+                $aggregates[$prefix][$note]++;
+            }
+
+            $baseQuery = DB::connection('uvs')
+                ->table('ma_u_kla')
+                ->where('termin_id', $terminId)
+                ->where('klassen_id', $klassenId)
+                ->where('mitarbeiter_id', $mitarbeiterId);
+
+            if (!(clone $baseQuery)->exists()) {
+                return response()->json([
+                    'ok'    => false,
+                    'error' => 'Kein ma_u_kla-Datensatz für termin_id/klassen_id/mitarbeiter_id gefunden.',
+                ], 404);
+            }
+
+            $updates = [];
+            $summary = [];
+
+            foreach ($aggregates as $prefix => $counts) {
+                $map = $mappingByPrefix[$prefix];
+                $countPrefix = $map['count_prefix'];
+                $totalCol = $map['total_col'];
+                $avgCol = $map['avg_col'];
+
+                $requiredCols = [
+                    $countPrefix . '1',
+                    $countPrefix . '2',
+                    $countPrefix . '3',
+                    $countPrefix . '4',
+                    $countPrefix . '5',
+                    $totalCol,
+                    $avgCol,
+                ];
+
+                foreach ($requiredCols as $column) {
+                    if (!Schema::connection('uvs')->hasColumn('ma_u_kla', $column)) {
+                        throw ValidationException::withMessages([
+                            'ratings' => "Spalte `{$column}` existiert nicht in `ma_u_kla`.",
+                        ]);
+                    }
+                }
+
+                $total = array_sum($counts);
+                $average = $total > 0
+                    ? round((($counts[1] * 1) + ($counts[2] * 2) + ($counts[3] * 3) + ($counts[4] * 4) + ($counts[5] * 5)) / $total, 2)
+                    : 0.0;
+
+                $updates[$countPrefix . '1'] = $counts[1];
+                $updates[$countPrefix . '2'] = $counts[2];
+                $updates[$countPrefix . '3'] = $counts[3];
+                $updates[$countPrefix . '4'] = $counts[4];
+                $updates[$countPrefix . '5'] = $counts[5];
+                $updates[$totalCol] = $total;
+                $updates[$avgCol] = $average;
+
+                $summary[] = [
+                    'prefix'  => $prefix,
+                    'counts'  => $counts,
+                    'total'   => $total,
+                    'average' => $average,
+                ];
+            }
+
+            if (empty($updates)) {
+                throw ValidationException::withMessages([
+                    'ratings' => 'Keine auswertbaren Bewertungen übermittelt.',
+                ]);
+            }
+
+            $affected = DB::connection('uvs')
+                ->table('ma_u_kla')
+                ->where('termin_id', $terminId)
+                ->where('klassen_id', $klassenId)
+                ->where('mitarbeiter_id', $mitarbeiterId)
+                ->update($updates);
+
+            return response()->json([
+                'ok'   => true,
+                'data' => [
+                    'action'          => 'aggregated_batch_synced',
+                    'termin_id'       => $terminId,
+                    'klassen_id'      => $klassenId,
+                    'mitarbeiter_id'  => $mitarbeiterId,
+                    'ratings_count'   => count($ratings),
+                    'updated_rows'    => $affected,
+                    'updated_columns' => array_keys($updates),
+                    'summary'         => $summary,
+                ],
+            ]);
+        });
+    }
+
 }

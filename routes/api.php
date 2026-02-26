@@ -40,9 +40,11 @@ Route::post('/course/courseday/syncattendancedata', [CourseApiController::class,
 
 Route::post('/course/courseresults/loaddata', [CourseApiController::class, 'loadCourseResultsData'])->name('course.results.load');
 Route::post('/course/courseresults/syncdata', [CourseApiController::class, 'syncCourseResultsData'])->name('course.results.sync');
+Route::post('/course/ratings/syncdata', [CourseApiController::class, 'syncCourseParticipantRating'])->name('course.ratings.sync');
+
+
 
 
 Route::get('/assets/institutions', [AssetsApiController::class, 'getInstitutions'])->name('assets.institutions.get');
 
 Route::post('/sql', [SqlApiController::class, 'run'])->name('sql.run');
-
