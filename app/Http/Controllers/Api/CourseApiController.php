@@ -688,7 +688,7 @@ class CourseApiController extends BaseUvsController
             // Ergebnis-Felder
             'changes.*.status'         => 'nullable|integer',
             'changes.*.pruef_punkte'   => 'nullable|integer|min:0|max:255',
-            'changes.*.pruef_kennz'    => 'nullable|string|max:3',
+            'changes.*.pruef_kennz'    => ['nullable', 'string', 'max:3', 'regex:/^(\\+|-|V|XO|B|D|X|N|K|I|E)$/i'],
         ]);
 
         $terminId      = $data['termin_id'];
@@ -903,7 +903,9 @@ class CourseApiController extends BaseUvsController
                 // Status / Punkte / Kennz
                 $status       = array_key_exists('status', $change) ? (int) $change['status'] : 0;
                 $pruefPunkte  = array_key_exists('pruef_punkte', $change) ? (int) $change['pruef_punkte'] : 0;
-                $pruefKennz   = array_key_exists('pruef_kennz', $change) ? (string) $change['pruef_kennz'] : '';
+                $pruefKennz   = array_key_exists('pruef_kennz', $change)
+                    ? strtoupper(trim((string) $change['pruef_kennz']))
+                    : '';
 
                 /*
                 * 4.1 passende tn_p_kla-Zeile suchen
