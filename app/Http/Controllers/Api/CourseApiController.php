@@ -830,6 +830,17 @@ class CourseApiController extends BaseUvsController
             // stammklassen_id ist in u_klasse nicht vorhanden → leerer String als Default
             $stammklassenId   = '';
 
+            // Harte Duplikat-Bereinigung: pro (termin_id, klassen_id, teilnehmer_id) genau 1 Datensatz behalten.
+            $deduplicateParticipantRows = function (string $teilnehmerId, int $keepUid) use ($terminId, $klassenId): int {
+                return DB::connection('uvs')
+                    ->table('tn_p_kla')
+                    ->where('termin_id', $terminId)
+                    ->where('klassen_id', $klassenId)
+                    ->where('teilnehmer_id', $teilnehmerId)
+                    ->where('uid', '<>', $keepUid)
+                    ->delete();
+            };
+
             foreach ($changes as $change) {
                 $teilnehmerId  = $change['teilnehmer_id']  ?? null;
                 $institutId    = $change['institut_id']    ?? null;
@@ -915,11 +926,6 @@ class CourseApiController extends BaseUvsController
                     ->where('termin_id', $terminId)
                     ->where('klassen_id', $klassenId)
                     ->where('teilnehmer_id', $teilnehmerId)
-                    ->where('institut_id', $institutId)
-                    ->when($teilnehmerFnr !== null, fn ($q) =>
-                        $q->where('teilnehmer_fnr', $teilnehmerFnr)
-                    )
-                    ->where('deleted', '0')
                     ->orderBy('uid', 'desc')
                     ->first();
 
@@ -937,10 +943,13 @@ class CourseApiController extends BaseUvsController
                                 'upd_date' => $updDate,
                             ]);
 
+                        $removedDuplicates = $deduplicateParticipantRows((string) $teilnehmerId, (int) $existing->uid);
+
                         $results[] = [
                             'uid'           => (int) $existing->uid,
                             'teilnehmer_id' => (string) $teilnehmerId,
                             'action'        => 'deleted',
+                            'deduplicated'  => (int) $removedDuplicates,
                         ];
                     } else {
                         $results[] = [
@@ -960,8 +969,12 @@ class CourseApiController extends BaseUvsController
                 */
                 if ($existing) {
                     $updatePayload = [
-                        'upd_date' => $updDate,
-                        'aktiv'    => 'SN', // Schulnetz-Flag
+                        'person_id'      => $personId,
+                        'institut_id'    => (int) $institutId,
+                        'teilnehmer_fnr' => $teilnehmerFnr,
+                        'deleted'        => '0',
+                        'upd_date'       => $updDate,
+                        'aktiv'          => 'SN', // Schulnetz-Flag
                     ];
 
                     if (array_key_exists('status', $change)) {
@@ -981,6 +994,8 @@ class CourseApiController extends BaseUvsController
                         ->where('uid', $existing->uid)
                         ->update($updatePayload);
 
+                    $removedDuplicates = $deduplicateParticipantRows((string) $teilnehmerId, (int) $existing->uid);
+
                     $results[] = [
                         'uid'             => (int) $existing->uid,
                         'teilnehmer_id'   => (string) $teilnehmerId,
@@ -988,6 +1003,7 @@ class CourseApiController extends BaseUvsController
                         'teilnehmer_fnr'  => $teilnehmerFnr,
                         'action'          => 'updated',
                         'applied_changes' => array_keys($updatePayload),
+                        'deduplicated'    => (int) $removedDuplicates,
                     ];
 
                     continue;
@@ -1044,6 +1060,8 @@ class CourseApiController extends BaseUvsController
                     ->table('tn_p_kla')
                     ->insertGetId($insertPayload);
 
+                $removedDuplicates = $deduplicateParticipantRows((string) $teilnehmerId, (int) $newUid);
+
                 $results[] = [
                     'uid'             => (int) $newUid,
                     'teilnehmer_id'   => (string) $teilnehmerId,
@@ -1051,6 +1069,7 @@ class CourseApiController extends BaseUvsController
                     'teilnehmer_fnr'  => $teilnehmerFnr,
                     'action'          => 'inserted',
                     'applied_changes' => array_keys($insertPayload),
+                    'deduplicated'    => (int) $removedDuplicates,
                 ];
             }
 
