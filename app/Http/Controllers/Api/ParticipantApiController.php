@@ -185,50 +185,50 @@ class ParticipantApiController extends BaseUvsController
         }
     }
 
-public function get(Request $request)
-{
-    $this->connectToUvsDatabase();
-    $person_mail = trim((string) $request->query('mail'));
+    public function get(Request $request)
+    {
+        $this->connectToUvsDatabase();
+        $person_mail = trim((string) $request->query('mail'));
 
-    if (!$person_mail) {
-        return response()->json(['message' => 'mail is required'], 400);
+        if (!$person_mail) {
+            return response()->json(['message' => 'mail is required'], 400);
+        }
+
+        $db = DB::connection('uvs');
+
+        // ALLE Personen mit dieser Mail holen
+        // Berücksichtigt auch zusammengesetzte Mails wie "a@b.de/c@d.de"
+        $persons = $db->table('person')
+            ->whereNotNull('email_priv')
+            ->where(function ($q) use ($person_mail) {
+                $q->where('email_priv', $person_mail)
+                ->orWhere('email_priv', 'like', $person_mail . '/%')   // steht am Anfang
+                ->orWhere('email_priv', 'like', '%/' . $person_mail)   // steht am Ende
+                ->orWhere('email_priv', 'like', '%/' . $person_mail . '/%'); // steht in der Mitte
+            })
+            ->orderBy('institut_id')   // optional, macht nur die Ausgabe schöner
+            ->get();
+
+        if ($persons->isEmpty()) {
+            return response()->json(['message' => 'Person not found'], 404);
+        }
+
+        activity('uvs')
+            ->causedBy($request->user())
+            ->withProperties([
+                'event'        => 'participant.retrieved_multi',
+                'mail'         => $this->maskEmail($person_mail),
+                'count'        => $persons->count(),
+                'person_ids'   => $persons->pluck('person_id')->all(),
+                'institut_ids' => $persons->pluck('institut_id')->all(),
+            ])
+            ->log('Participant data (multi) retrieved');
+
+        // Response jetzt als Liste zurückgeben
+        return response()->json([
+            'persons' => $persons,
+        ]);
     }
-
-    $db = DB::connection('uvs');
-
-    // ALLE Personen mit dieser Mail holen
-    // Berücksichtigt auch zusammengesetzte Mails wie "a@b.de/c@d.de"
-    $persons = $db->table('person')
-        ->whereNotNull('email_priv')
-        ->where(function ($q) use ($person_mail) {
-            $q->where('email_priv', $person_mail)
-              ->orWhere('email_priv', 'like', $person_mail . '/%')   // steht am Anfang
-              ->orWhere('email_priv', 'like', '%/' . $person_mail)   // steht am Ende
-              ->orWhere('email_priv', 'like', '%/' . $person_mail . '/%'); // steht in der Mitte
-        })
-        ->orderBy('institut_id')   // optional, macht nur die Ausgabe schöner
-        ->get();
-
-    if ($persons->isEmpty()) {
-        return response()->json(['message' => 'Person not found'], 404);
-    }
-
-    activity('uvs')
-        ->causedBy($request->user())
-        ->withProperties([
-            'event'        => 'participant.retrieved_multi',
-            'mail'         => $this->maskEmail($person_mail),
-            'count'        => $persons->count(),
-            'person_ids'   => $persons->pluck('person_id')->all(),
-            'institut_ids' => $persons->pluck('institut_id')->all(),
-        ])
-        ->log('Participant data (multi) retrieved');
-
-    // Response jetzt als Liste zurückgeben
-    return response()->json([
-        'persons' => $persons,
-    ]);
-}
 
 
     public function getParticipantAndQualiprogram(Request $request, string $person_id)

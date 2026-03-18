@@ -35,7 +35,10 @@ class CourseApiController extends BaseUvsController
         // Kernabfrage: u_klasse + baustein (Langbezeichnung) + termin (Datumsfelder)
         $q = DB::connection('uvs')
             ->table('u_klasse as k')
-            ->leftJoin('baustein as b', 'b.kurzbez', '=', 'k.kurzbez_ba')       // b.langbez
+            ->join('baustein as b', function ($join) {
+                $join->on('b.kurzbez', '=', 'k.kurzbez_ba')
+                    ->where('b.aktiv', 1);
+            })       // b.langbez
             ->leftJoin('termin   as t', 't.termin_id', '=', 'k.termin_id')      // t.beginn_baustein, t.ende_baustein
             ->leftJoin('ma_u_kla as mk', 'mk.klassen_id', '=', 'k.klassen_id'); // nur für evtl. spätere Erweiterung
 
@@ -170,7 +173,10 @@ class CourseApiController extends BaseUvsController
         // Kurs-/Klassen-Stammdaten
         $course = DB::connection('uvs')
             ->table('u_klasse as k') // u_klasse.klassen_id, kurzbez_ba, termin_id
-            ->leftJoin('baustein as b', 'b.kurzbez', '=', 'k.kurzbez_ba') // baustein.langbez
+            ->join('baustein as b', function ($join) {
+                $join->on('b.kurzbez', '=', 'k.kurzbez_ba')
+                    ->where('b.aktiv', 1);
+            }) // baustein.langbez
             ->leftJoin('termin   as t', 't.termin_id', '=', 'k.termin_id') // termin.beginn_baustein/ende_baustein
             ->where('k.klassen_id', $klassenId)
             ->select([
@@ -707,7 +713,10 @@ class CourseApiController extends BaseUvsController
         */
         $classRow = DB::connection('uvs')
             ->table('u_klasse as k')
-            ->leftJoin('baustein as b', 'b.kurzbez', '=', 'k.kurzbez_ba')
+            ->join('baustein as b', function ($join) {
+                $join->on('b.kurzbez', '=', 'k.kurzbez_ba')
+                    ->where('b.aktiv', 1);
+            })
             ->where('k.klassen_id', $klassenId)
             ->where('k.termin_id', $terminId)
             ->select([
