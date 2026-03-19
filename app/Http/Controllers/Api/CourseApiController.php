@@ -261,10 +261,10 @@ class CourseApiController extends BaseUvsController
                     ->orWhere('bm.baustein_5', $kurzbez)
                     ->orWhere('bm.baustein_6', $kurzbez);
                 })
-                ->where('bm.freigabe_von', '<=', $now) // bigint(20) Unixzeit
-                ->where('bm.freigabe_bis', '>=', $now) // bigint(20) Unixzeit
+                ->where('bm.freigabe_von', '<=', $now) // bigint(20) TimeStamp
+                ->where('bm.freigabe_bis', '>=', $now) // bigint(20) TimeStamp
                 // optional: nur aktive Datensätze, falls in deiner DB so genutzt
-                // ->where('bm.status', '=', '1')
+                ->where('bm.status', '=', '0')
                 ->orderBy('bm.titel')
                 ->get([
                     'bm.titel',
