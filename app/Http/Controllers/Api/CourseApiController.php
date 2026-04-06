@@ -717,7 +717,8 @@ class CourseApiController extends BaseUvsController
             // Ergebnis-Felder
             'changes.*.status'         => 'nullable|integer',
             'changes.*.pruef_punkte'   => 'nullable|integer|min:0|max:255',
-            'changes.*.pruef_kennz'    => ['nullable', 'string', 'max:3', 'regex:/^(\\+|-|V|XO|B|D|X|N|K|I|E)$/i'],
+            'changes.*.pruef_kennz'    => ['nullable', 'string', 'max:3', 'regex:/^(?:\\+|-|V|XO|B|D|X|N|K|I|E)?$/i'],
+            'changes.*.aktiv'          => 'nullable|string|max:10',
         ]);
 
         $terminId      = $data['termin_id'];
@@ -802,6 +803,12 @@ class CourseApiController extends BaseUvsController
                 'aktiv',
             ]);
 
+        // Pro Teilnehmer nur den neuesten Datensatz (höchste uid) verwenden.
+        $rows = $rows
+            ->groupBy(fn ($row) => (string) $row->teilnehmer_id)
+            ->map(fn ($group) => $group->sortByDesc(fn ($row) => (int) $row->uid)->first())
+            ->values();
+
         $items = $rows->map(function ($row) {
             return [
                 'uid'             => (int) $row->uid,
@@ -844,9 +851,10 @@ class CourseApiController extends BaseUvsController
         | - Wenn keine existiert → INSERT mit Default-Feldern aus
         |   u_klasse, baustein, tn_u_kla + den Ergebnis-Feldern.
         |
-        | aktiv wird als "Schulnetz-Flag" genutzt:
-        |   - bei UPDATE/INSERT: aktiv = 'SN'
-        |   - bei Delete: aktiv = ''
+        | status wird fuer UVS immer auf 1 gesetzt.
+        | aktiv:
+        |   - bei UPDATE/INSERT default = 'SN', kann per Payload ueberschrieben werden
+        |   - bei Delete = ''
         */
         $pushed = null;
 
@@ -943,18 +951,24 @@ class CourseApiController extends BaseUvsController
                 $action  = $change['action'] ?? 'update';
                 $updDate = now()->format('Y/m/d');
 
-                // Status / Punkte / Kennz (nullable-safe)
-                $statusProvided = array_key_exists('status', $change);
+                // Status / Punkte / Kennz / Aktiv (nullable-safe)
                 $punkteProvided = array_key_exists('pruef_punkte', $change);
                 $kennzProvided  = array_key_exists('pruef_kennz', $change);
+                $aktivProvided  = array_key_exists('aktiv', $change);
 
-                $status      = $statusProvided ? $this->nullableInt($change['status']) : null;
+                // UVS-Vorgabe: status immer 1
+                $status      = 1;
                 $pruefPunkte = $punkteProvided ? $this->nullableInt($change['pruef_punkte']) : null;
 
                 $pruefKennz = '';
                 if ($kennzProvided) {
                     $kennz = strtoupper(trim((string) ($change['pruef_kennz'] ?? '')));
                     $pruefKennz = $kennz !== '' ? $kennz : '';
+                }
+
+                $aktiv = 'SN';
+                if ($aktivProvided) {
+                    $aktiv = trim((string) ($change['aktiv'] ?? ''));
                 }
 
                 /*
@@ -969,7 +983,7 @@ class CourseApiController extends BaseUvsController
                     ->first();
 
                 /*
-                * 4.2 DELETE-Pfad (logisches Delete)
+                * 4.2 DELETE-Pfad (Reset ohne Nutzung von tn_p_kla.deleted)
                 */
                 if ($action === 'delete') {
                     if ($existing) {
@@ -977,7 +991,8 @@ class CourseApiController extends BaseUvsController
                             ->table('tn_p_kla')
                             ->where('uid', $existing->uid)
                             ->update([
-                                'deleted'  => '1',
+                                'deleted'  => '0',
+                                'status'   => 1,
                                 'aktiv'    => '',
                                 'upd_date' => $updDate,
                             ]);
@@ -1012,13 +1027,10 @@ class CourseApiController extends BaseUvsController
                         'institut_id'    => (int) $institutId,
                         'teilnehmer_fnr' => $teilnehmerFnr,
                         'deleted'        => '0',
+                        'status'         => $status,
                         'upd_date'       => $updDate,
-                        'aktiv'          => 'SN', // Schulnetz-Flag
+                        'aktiv'          => $aktiv,
                     ];
-
-                    if ($statusProvided) {
-                        $updatePayload['status'] = $status;
-                    }
 
                     if ($punkteProvided) {
                         $updatePayload['pruef_punkte'] = $pruefPunkte;
@@ -1092,7 +1104,7 @@ class CourseApiController extends BaseUvsController
                     'upd_date'        => $updDate,
                     'pruef_kennz'     => $pruefKennz,
                     'pruef_punkte'    => $pruefPunkte,
-                    'aktiv'           => 'SN',  // Schulnetz-Flag
+                    'aktiv'           => $aktiv,
                 ];
 
                 $newUid = DB::connection('uvs')
@@ -1201,6 +1213,12 @@ class CourseApiController extends BaseUvsController
                 'pruef_punkte',
                 'aktiv',
             ]);
+
+        // Pro Teilnehmer nur den neuesten Datensatz (höchste uid) verwenden.
+        $rows = $rows
+            ->groupBy(fn ($row) => (string) $row->teilnehmer_id)
+            ->map(fn ($group) => $group->sortByDesc(fn ($row) => (int) $row->uid)->first())
+            ->values();
 
         $items = $rows->map(function ($row) {
             return [
