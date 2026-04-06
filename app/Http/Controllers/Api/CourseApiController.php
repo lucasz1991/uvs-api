@@ -14,6 +14,29 @@ use Illuminate\Support\Facades\Log;
 class CourseApiController extends BaseUvsController
 {
     /**
+     * Convert mixed numeric payloads to nullable int.
+     */
+    private function nullableInt(mixed $value): ?int
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_string($value)) {
+            $value = trim($value);
+            if ($value === '') {
+                return null;
+            }
+        }
+
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        return (int) $value;
+    }
+
+    /**
      * GET /api/course-classes?search=ABC&limit=25&from=2025-01-01&to=2025-12-31
      */
     public function getCourseClasses(Request $request)
@@ -796,10 +819,10 @@ class CourseApiController extends BaseUvsController
                 'klassen_id'      => (string) $row->klassen_id,
                 'stammklassen_id' => (string) $row->stammklassen_id,
                 'klassen_co_ks'   => (string) $row->klassen_co_ks,
-                'status'          => (int) $row->status,
+                'status'          => $this->nullableInt($row->status),
                 'upd_date'        => (string) $row->upd_date,
                 'pruef_kennz'     => (string) $row->pruef_kennz,
-                'pruef_punkte'    => (int) $row->pruef_punkte,
+                'pruef_punkte'    => $this->nullableInt($row->pruef_punkte),
                 'aktiv'           => (string) $row->aktiv,
             ];
         });
@@ -920,12 +943,19 @@ class CourseApiController extends BaseUvsController
                 $action  = $change['action'] ?? 'update';
                 $updDate = now()->format('Y/m/d');
 
-                // Status / Punkte / Kennz
-                $status       = array_key_exists('status', $change) ? (int) $change['status'] : 0;
-                $pruefPunkte  = array_key_exists('pruef_punkte', $change) ? (int) $change['pruef_punkte'] : 0;
-                $pruefKennz   = array_key_exists('pruef_kennz', $change)
-                    ? strtoupper(trim((string) $change['pruef_kennz']))
-                    : '';
+                // Status / Punkte / Kennz (nullable-safe)
+                $statusProvided = array_key_exists('status', $change);
+                $punkteProvided = array_key_exists('pruef_punkte', $change);
+                $kennzProvided  = array_key_exists('pruef_kennz', $change);
+
+                $status      = $statusProvided ? $this->nullableInt($change['status']) : null;
+                $pruefPunkte = $punkteProvided ? $this->nullableInt($change['pruef_punkte']) : null;
+
+                $pruefKennz = '';
+                if ($kennzProvided) {
+                    $kennz = strtoupper(trim((string) ($change['pruef_kennz'] ?? '')));
+                    $pruefKennz = $kennz !== '' ? $kennz : '';
+                }
 
                 /*
                 * 4.1 passende tn_p_kla-Zeile suchen
@@ -986,15 +1016,15 @@ class CourseApiController extends BaseUvsController
                         'aktiv'          => 'SN', // Schulnetz-Flag
                     ];
 
-                    if (array_key_exists('status', $change)) {
+                    if ($statusProvided) {
                         $updatePayload['status'] = $status;
                     }
 
-                    if (array_key_exists('pruef_punkte', $change)) {
+                    if ($punkteProvided) {
                         $updatePayload['pruef_punkte'] = $pruefPunkte;
                     }
 
-                    if (array_key_exists('pruef_kennz', $change)) {
+                    if ($kennzProvided) {
                         $updatePayload['pruef_kennz'] = $pruefKennz;
                     }
 
@@ -1189,10 +1219,10 @@ class CourseApiController extends BaseUvsController
                 'klassen_id'      => (string) $row->klassen_id,
                 'stammklassen_id' => (string) $row->stammklassen_id,
                 'klassen_co_ks'   => (string) $row->klassen_co_ks,
-                'status'          => (int) $row->status,
+                'status'          => $this->nullableInt($row->status),
                 'upd_date'        => (string) $row->upd_date,
                 'pruef_kennz'     => (string) $row->pruef_kennz,
-                'pruef_punkte'    => (int) $row->pruef_punkte,
+                'pruef_punkte'    => $this->nullableInt($row->pruef_punkte),
                 'aktiv'           => (string) $row->aktiv,
             ];
         });
