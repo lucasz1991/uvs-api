@@ -121,6 +121,7 @@ class PersonApiController extends BaseUvsController
                 ->first();
         }
 
+        $teilnehmerId = $selectedVertrag['teilnehmer_id'] ?? null;
         $teilnehmerNr = $selectedVertrag['teilnehmer_nr'] ?? null;
         $lastTnDatumStr = $selectedVertrag['letzter_tag'] ?? null;
         $vertragKuendigZum = $selectedVertrag['kuendig_zum'] ?? null;
@@ -142,11 +143,28 @@ class PersonApiController extends BaseUvsController
 
         $mitarbeiter = DB::connection('uvs')->table('mitarbei')
             ->where('person_id', $personId)
+            ->orderByDesc('uid')
             ->first();
 
         $mitarbeiterNr = null;
+        $mitarbeiterId = null;
+        $mitarbeiterVertragKy = null;
+        $isTutor = false;
+
         if ($mitarbeiter) {
-            $mitarbeiterNr = $personNr . ($mitarbeiter->mitarbeiter_fnr ?? '');
+            $mitarbeiterId = $mitarbeiter->mitarbeiter_id ?? null;
+            $mitarbeiterFnr = trim((string) ($mitarbeiter->mitarbeiter_fnr ?? ''));
+            $mitarbeiterNr = !empty($mitarbeiter->mitarbeiter_nr) ? (string) $mitarbeiter->mitarbeiter_nr : null;
+
+            if ($mitarbeiterFnr !== '') {
+                $expectedLength = strlen($personNr . $mitarbeiterFnr);
+                $mitarbeiterNr = $mitarbeiterNr !== null
+                    ? str_pad($mitarbeiterNr, $expectedLength, '0', STR_PAD_LEFT)
+                    : $personNr . $mitarbeiterFnr;
+            }
+
+            $mitarbeiterVertragKy = strtoupper(trim((string) ($mitarbeiter->vertrag_ky ?? ''))) ?: null;
+            $isTutor = $mitarbeiterVertragKy === 'IS';
         }
 
         $lastTnDate = $parseDate($lastTnDatumStr);
@@ -188,10 +206,14 @@ class PersonApiController extends BaseUvsController
                 'status'           => $personStatus,
                 'status_short'     => $personStatusShort,
 
+                'teilnehmer_id'    => $teilnehmerId,
                 'teilnehmer_nr'    => $teilnehmerNr,
                 'absolvent_nr'     => $absolventNr,
                 'interessent_nr'   => $interessentNr,
+                'mitarbeiter_id'   => $mitarbeiterId,
                 'mitarbeiter_nr'   => $mitarbeiterNr,
+                'mitarbeiter_vertrag_ky' => $mitarbeiterVertragKy,
+                'is_tutor'         => $isTutor,
 
                 'vertrag_kuendig_zum' => $vertragKuendigZum,
                 'last_teilnehmer_tag' => $lastTnDatumStr,
