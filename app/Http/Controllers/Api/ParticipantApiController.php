@@ -392,7 +392,8 @@ class ParticipantApiController extends BaseUvsController
             ->leftJoin('termin', 'termin.termin_id', '=', 'tn_baust.termin_id_ham')
             ->leftJoin('tn_u_kla', function ($join) {
                 $join->on('tn_u_kla.baustein_id', '=', 'tn_baust.baustein_id')
-                    ->on('tn_u_kla.teilnehmer_id', '=', 'tn_baust.teilnehmer_id');
+                    ->on('tn_u_kla.teilnehmer_id', '=', 'tn_baust.teilnehmer_id')
+                    ->on('tn_u_kla.termin_id', '=', 'termin.termin_id');
             })
             ->where('tn_baust.teilnehmer_id', $qualiBase->teilnehmer_id)
             ->where('tn_baust.deleted', '0')
