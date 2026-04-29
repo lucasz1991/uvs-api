@@ -63,7 +63,7 @@ class ParticipantApiController extends BaseUvsController
         }
 
         $db = DB::connection('uvs');
-        $now = Carbon::now()->format('Y-m-d');
+        $now = Carbon::now()->format('Y/m/d');
         $institut_id = $data['institut_id'];
 
         try {
