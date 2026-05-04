@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\PersonApiController;
 use App\Http\Controllers\Api\TutorApiController;
 use App\Http\Controllers\Api\CourseApiController;
 use App\Http\Controllers\Api\AssetsApiController;
+use App\Http\Controllers\Api\UVSApiController;
 
 use App\Http\Controllers\Api\SqlApiController;
 
@@ -46,5 +47,9 @@ Route::post('/course/ratings/syncdata', [CourseApiController::class, 'syncCourse
 
 
 Route::get('/assets/institutions', [AssetsApiController::class, 'getInstitutions'])->name('assets.institutions.get');
+
+Route::get('/uvs/due-dates-management', [UVSApiController::class, 'getDueDatesManagement'])->name('uvs.due-dates-management.get');
+Route::get('/uvs/module-overview', [UVSApiController::class, 'getModuleOverview'])->name('uvs.module-overview.get');
+Route::get('/uvs/participant-rate-selection', [UVSApiController::class, 'getParticipantRateSelection'])->name('uvs.participant-rate-selection.get');
 
 Route::post('/sql', [SqlApiController::class, 'run'])->name('sql.run');
