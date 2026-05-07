@@ -6,6 +6,8 @@ use Closure;
 use Illuminate\Http\Request;
 use App\Models\ApiKey;
 use Symfony\Component\HttpFoundation\Response;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 
 class ApiKeyMiddleware
@@ -105,10 +107,59 @@ class ApiKeyMiddleware
             })
             ->log("{$prefix}{$description} - used URL - {$fullUrl} - {$request->method()}");
 
-
         // ===============================================================
 
-        return $next($request);
+        $response = $next($request);
+
+        if ($response->getStatusCode() < 500 && !Cache::has('maintenance:activity-log-prune:next-allowed-at')) {
+            $signedUrl = URL::temporarySignedRoute(
+                'maintenance.activity-log.prune',
+                now()->addMinutes(5)
+            );
+
+            app()->terminating(function () use ($signedUrl, $request): void {
+                try {
+                    $parts = parse_url($signedUrl);
+
+                    if (!is_array($parts) || empty($parts['host']) || empty($parts['path'])) {
+                        return;
+                    }
+
+                    $scheme = strtolower($parts['scheme'] ?? 'http');
+                    $host = $parts['host'];
+                    $port = $parts['port'] ?? ($scheme === 'https' ? 443 : 80);
+                    $path = $parts['path'] . (!empty($parts['query']) ? '?' . $parts['query'] : '');
+                    $transport = $scheme === 'https' ? 'ssl://' : '';
+
+                    $socket = @fsockopen($transport . $host, $port, $errno, $errstr, 0.25);
+
+                    if (!is_resource($socket)) {
+                        return;
+                    }
+
+                    stream_set_blocking($socket, false);
+
+                    $headers = [
+                        "GET {$path} HTTP/1.1",
+                        "Host: {$host}",
+                        "Accept: application/json",
+                        "Connection: Close",
+                    ];
+
+                    $userAgent = (string) ($request->userAgent() ?: 'UVS-API');
+                    if ($userAgent !== '') {
+                        $headers[] = 'User-Agent: ' . $userAgent;
+                    }
+
+                    fwrite($socket, implode("\r\n", $headers) . "\r\n\r\n");
+                    fclose($socket);
+                } catch (\Throwable $e) {
+                    // Cleanup-Trigger darf den API-Request nicht beeinflussen.
+                }
+            });
+        }
+
+        return $response;
     }
 
     /**

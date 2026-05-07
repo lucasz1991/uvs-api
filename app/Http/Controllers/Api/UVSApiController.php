@@ -21,7 +21,6 @@ class UVSApiController extends BaseUvsController
     public function getDueDatesManagement(Request $request)
     {
         $filters = $request->validate([
-            'institut_id' => 'sometimes|integer',
             'institut_ids' => 'sometimes|string|max:255',
             'participant_number' => 'sometimes|string|max:50',
             'course' => 'sometimes|string|max:50',
@@ -40,17 +39,36 @@ class UVSApiController extends BaseUvsController
             ->selectRaw('MAX(tv.uid) as uid, tv.person_id, tv.kurzbez_mn, tv.vertrag_beginn')
             ->groupBy('tv.person_id', 'tv.kurzbez_mn', 'tv.vertrag_beginn');
 
+        $participantMassMap = $db->table('tvertrag as tv')
+            ->selectRaw('MAX(tv.uid) as uid, tv.person_id, tv.kurzbez_mn')
+            ->groupBy('tv.person_id', 'tv.kurzbez_mn');
+
+        $participantPersonMap = $db->table('tvertrag as tv')
+            ->selectRaw('MAX(tv.uid) as uid, tv.person_id')
+            ->groupBy('tv.person_id');
+
         $contracts = $db->table('ivertrag as iv')
             ->leftJoinSub($participantContractMap, 'tv_pick', function ($join) {
                 $join->on('tv_pick.person_id', '=', 'iv.person_id')
                     ->on('tv_pick.kurzbez_mn', '=', 'iv.vertrag_mass')
                     ->on('tv_pick.vertrag_beginn', '=', 'iv.vertrag_beginn');
             })
+            ->leftJoinSub($participantMassMap, 'tv_mass_pick', function ($join) {
+                $join->on('tv_mass_pick.person_id', '=', 'iv.person_id')
+                    ->on('tv_mass_pick.kurzbez_mn', '=', 'iv.vertrag_mass');
+            })
+            ->leftJoinSub($participantPersonMap, 'tv_person_pick', function ($join) {
+                $join->on('tv_person_pick.person_id', '=', 'iv.person_id');
+            })
             ->leftJoin('tvertrag as tv', 'tv.uid', '=', 'tv_pick.uid')
+            ->leftJoin('tvertrag as tv_mass', 'tv_mass.uid', '=', 'tv_mass_pick.uid')
+            ->leftJoin('tvertrag as tv_person', 'tv_person.uid', '=', 'tv_person_pick.uid')
             ->leftJoin('institut as inst', 'inst.institut_id', '=', 'iv.institut_id')
             ->select([
                 'iv.uid',
                 'iv.beratung_id',
+                'iv.beratung_nr',
+                'iv.interessent_nr',
                 'iv.person_id',
                 'iv.institut_id',
                 'iv.vertrag_mass',
@@ -77,6 +95,8 @@ class UVSApiController extends BaseUvsController
                 'iv.zahlungsart_tn',
                 'iv.zahlungsart_so',
                 'tv.teilnehmer_nr',
+                'tv_mass.teilnehmer_nr as teilnehmer_nr_mass',
+                'tv_person.teilnehmer_nr as teilnehmer_nr_person',
                 'tv.kurzbez_mn',
                 'inst.institut_co',
                 'inst.ort',
@@ -85,7 +105,17 @@ class UVSApiController extends BaseUvsController
         $this->applyInstituteFilters($contracts, $filters, 'iv.institut_id');
 
         if (!empty($filters['participant_number'])) {
-            $contracts->where('tv.teilnehmer_nr', 'like', '%' . trim($filters['participant_number']) . '%');
+            $participantNumber = trim($filters['participant_number']);
+
+            $contracts->where(function ($query) use ($participantNumber) {
+                $query->where('tv.teilnehmer_nr', 'like', '%' . $participantNumber . '%')
+                    ->orWhere('tv_mass.teilnehmer_nr', 'like', '%' . $participantNumber . '%')
+                    ->orWhere('tv_person.teilnehmer_nr', 'like', '%' . $participantNumber . '%')
+                    ->orWhere('iv.interessent_nr', 'like', '%' . $participantNumber . '%')
+                    ->orWhereRaw("SUBSTRING(COALESCE(NULLIF(iv.beratung_nr, ''), SUBSTRING_INDEX(iv.beratung_id, '-', -1)), 1, 9) like ?", [
+                        '%' . $participantNumber . '%',
+                    ]);
+            });
         }
 
         if (!empty($filters['course'])) {
@@ -141,7 +171,6 @@ class UVSApiController extends BaseUvsController
     public function getModuleOverview(Request $request)
     {
         $filters = $request->validate([
-            'institut_id' => 'sometimes|integer',
             'institut_ids' => 'sometimes|string|max:255',
             'class' => 'sometimes|string|max:50',
             'module' => 'sometimes|string|max:50',
@@ -253,7 +282,6 @@ class UVSApiController extends BaseUvsController
     public function getParticipantRateSelection(Request $request)
     {
         $filters = $request->validate([
-            'institut_id' => 'sometimes|integer',
             'institut_ids' => 'sometimes|string|max:255',
             'participant_number' => 'sometimes|string|max:50',
             'plz' => 'sometimes|string|max:20',
@@ -384,7 +412,7 @@ class UVSApiController extends BaseUvsController
                 'Plz',
                 'Geburtsdatum',
                 'Geschlecht',
-                'Nationalität',
+                'Nationalitaet',
                 'Vtz',
                 'Massnahmekurz',
                 'Bildungsbeginn',
@@ -466,10 +494,6 @@ class UVSApiController extends BaseUvsController
     protected function applyInstituteFilters(Builder $query, array $filters, string $column): void
     {
         $institutIds = [];
-
-        if (isset($filters['institut_id'])) {
-            $institutIds[] = (int) $filters['institut_id'];
-        }
 
         if (!empty($filters['institut_ids'])) {
             $institutIds = array_merge($institutIds, $this->parseIntegerList($filters['institut_ids']));
@@ -587,7 +611,7 @@ class UVSApiController extends BaseUvsController
             $contract->ort ?? null,
             $contract->institut_id ?? null
         );
-        $participantNumber = $this->cleanString($contract->teilnehmer_nr);
+        $participantNumber = $this->resolveParticipantNumber($contract);
         $course = $this->firstFilled($contract->kurzbez_mn, $contract->vertrag_mass);
         $anchorDate = $this->resolveDueDateAnchor(
             $contract->vertrag_beginn ?? null,
@@ -775,6 +799,42 @@ class UVSApiController extends BaseUvsController
         }
 
         return number_format((float) $value, $decimals, ',', '');
+    }
+
+    protected function resolveParticipantNumber(object $contract): string
+    {
+        return $this->firstFilled(
+            $contract->teilnehmer_nr ?? null,
+            $contract->teilnehmer_nr_mass ?? null,
+            $contract->teilnehmer_nr_person ?? null,
+            $contract->interessent_nr ?? null,
+            $this->extractParticipantNumberFromConsultation(
+                $contract->beratung_nr ?? null,
+                $contract->beratung_id ?? null
+            )
+        );
+    }
+
+    protected function extractParticipantNumberFromConsultation(?string $beratungNr, ?string $beratungId): string
+    {
+        $candidate = $this->cleanString($beratungNr);
+
+        if ($candidate === '') {
+            $consultationId = $this->cleanString($beratungId);
+
+            if ($consultationId !== '') {
+                $parts = explode('-', $consultationId, 2);
+                $candidate = $parts[1] ?? $consultationId;
+            }
+        }
+
+        $digits = preg_replace('/\D+/', '', $candidate ?? '');
+
+        if (!is_string($digits) || strlen($digits) < 9) {
+            return '';
+        }
+
+        return substr($digits, 0, 9);
     }
 
     protected function formatLocation(?string $code, ?string $city, mixed $fallbackId): string

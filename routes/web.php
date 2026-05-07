@@ -2,6 +2,9 @@
 
 use Illuminate\Support\Facades\Route;
 
+use App\Http\Controllers\Api\MaintenanceApiController;
+use App\Http\Middleware\ApiKeyMiddleware;
+use App\Http\Middleware\LogActivity;
 use App\Livewire\AdminDashboard;
 use App\Livewire\AdminConfig;
 use App\Livewire\Admin\Users;
@@ -21,6 +24,11 @@ use App\Livewire\Admin\UserProfile;
 | be assigned to the "web" middleware group. Make something great!
 |
 */
+
+Route::get('/internal/maintenance/activity-log/prune', [MaintenanceApiController::class, 'pruneActivityLogs'])
+    ->middleware('signed')
+    ->withoutMiddleware([ApiKeyMiddleware::class, LogActivity::class])
+    ->name('maintenance.activity-log.prune');
 
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->group(function () {
     // Admin Routes
