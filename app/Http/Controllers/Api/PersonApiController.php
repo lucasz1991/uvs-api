@@ -77,6 +77,8 @@ class PersonApiController extends BaseUvsController
             ->map(function ($row) use ($parseDate, $today) {
                 $kuendigDate = $parseDate($row->kuendig_zum ?? null);
                 $vertragEndeDate = $parseDate($row->vertrag_ende ?? null);
+                $isActive = (! $kuendigDate || $kuendigDate->gte($today))
+                    && (! $vertragEndeDate || $vertragEndeDate->gte($today));
 
                 return [
                     'teilnehmer_id' => $row->teilnehmer_id ?? null,
@@ -84,7 +86,7 @@ class PersonApiController extends BaseUvsController
                     'letzter_tag' => $row->letzter_tag ?? null,
                     'vertrag_ende' => $row->vertrag_ende ?? null,
                     'kuendig_zum' => $row->kuendig_zum ?? null,
-                    'is_active' => is_null($kuendigDate) || $kuendigDate->gt($today),
+                    'is_active' => $isActive,
                     '_kuendig_ts' => $kuendigDate?->timestamp ?? 0,
                     '_vertrag_ende_ts' => $vertragEndeDate?->timestamp ?? 0,
                 ];

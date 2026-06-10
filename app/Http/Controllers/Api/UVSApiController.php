@@ -289,6 +289,8 @@ class UVSApiController extends BaseUvsController
             'course' => 'sometimes|string|max:50',
             'kt_kurz' => 'sometimes|string|max:50',
             'has_cancellation' => 'sometimes|boolean',
+            'include_headers' => 'sometimes',
+            'include_header' => 'sometimes',
             'from' => 'sometimes|date_format:Y-m-d',
             'to' => 'sometimes|date_format:Y-m-d|after_or_equal:from',
             'limit' => 'sometimes|integer|min:1|max:50000',
@@ -307,6 +309,7 @@ class UVSApiController extends BaseUvsController
 
         $rows = $db->table('tvertrag as tv')
             ->leftJoin('person as p', 'p.person_id', '=', 'tv.person_id')
+            ->leftJoin('institut as inst', 'inst.institut_id', '=', 'tv.institut_id')
             ->leftJoinSub($contractMap, 'iv_pick', function ($join) {
                 $join->on('iv_pick.person_id', '=', 'tv.person_id')
                     ->on('iv_pick.vertrag_mass', '=', 'tv.kurzbez_mn')
@@ -329,10 +332,13 @@ class UVSApiController extends BaseUvsController
                 'tv.vertrag_baust',
                 'tv.vertrag_datum as tv_vertrag_datum',
                 'tv.kurzbez_kt',
+                'tv.institut_id',
                 'p.plz',
                 'p.geburt_datum',
                 'p.geschlecht',
                 'p.nationalitaet',
+                'inst.institut_co',
+                'inst.ort as institut_ort',
                 'iv.vertrag_datum as iv_vertrag_datum',
                 'iv.geb_gesamt',
                 'iv.kt_kurz',
@@ -405,9 +411,15 @@ class UVSApiController extends BaseUvsController
             $rows->limit((int) $filters['limit']);
         }
 
+        $includeHeaders = filter_var(
+            $filters['include_headers'] ?? $filters['include_header'] ?? false,
+            FILTER_VALIDATE_BOOL
+        );
+
         return $this->streamCsvDownload(
             'teilnehmer_satz_auswahl.csv',
             [
+                'Institut',
                 'TNNummer',
                 'Plz',
                 'Geburtsdatum',
@@ -436,10 +448,16 @@ class UVSApiController extends BaseUvsController
                 foreach ($rows->cursor() as $row) {
                     $ktKurz = $this->firstFilled($row->kt_kurz, $row->kurzbez_kt);
                     $ktOrt = $this->cleanString($row->kt_ort);
+                    $institute = $this->formatLocation(
+                        $row->institut_co ?? null,
+                        $row->institut_ort ?? null,
+                        $row->institut_id ?? null
+                    );
 
                     // Im aktuellen UVS-Schema fehlen x_iv_kst/mpbuero. Die MB-Felder
                     // fallen daher auf die verfügbaren Kostenträger-Basisdaten zurück.
                     $this->writeCsvRow($handle, [
+                        $institute,
                         $this->cleanString($row->teilnehmer_nr),
                         $this->cleanString($row->plz),
                         $this->formatCsvDate($row->geburt_datum),
@@ -465,18 +483,26 @@ class UVSApiController extends BaseUvsController
                         $ktOrt,
                     ]);
                 }
-            }
+            },
+            $includeHeaders
         );
     }
 
-    protected function streamCsvDownload(string $filename, array $header, callable $writer): StreamedResponse
+    protected function streamCsvDownload(
+        string $filename,
+        array $header,
+        callable $writer,
+        bool $includeHeader = true
+    ): StreamedResponse
     {
         return response()->streamDownload(
-            function () use ($header, $writer) {
+            function () use ($header, $writer, $includeHeader) {
                 $handle = fopen('php://output', 'w');
 
                 fwrite($handle, "\xEF\xBB\xBF");
-                fputcsv($handle, $header, ';');
+                if ($includeHeader) {
+                    fputcsv($handle, $header, ';');
+                }
                 $writer($handle);
 
                 fclose($handle);
