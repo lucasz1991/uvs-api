@@ -487,9 +487,16 @@ class CourseApiController extends BaseUvsController
             if ($action === 'delete') {
                 if ($existing) {
                     DB::connection('uvs')
-                        ->table('tn_fehl')
-                        ->where('uid', $existing->uid)
-                        ->delete();
+                        ->transaction(function () use ($existing) {
+                            DB::connection('uvs')
+                                ->table('tn_fehl_deleted')
+                                ->insert((array) $existing);
+
+                            DB::connection('uvs')
+                                ->table('tn_fehl')
+                                ->where('uid', $existing->uid)
+                                ->delete();
+                        });
 
                     $results[] = [
                         'uid'           => (int) $existing->uid,
