@@ -12,178 +12,239 @@ class ParticipantApiController extends BaseUvsController
 {
 
     public function store(Request $request)
-    {
-        $this->connectToUvsDatabase();
-        try {
-            $data = $request->validate([
-                'institut_id'      => 'required|integer',
-                'geschlecht'       => 'required|string|in:M,W,D,S',
-                'titel_kennz'      => 'nullable|string|max:10',
-                'nachname'         => 'required|string|max:125',
-                'vorname'          => 'required|string|max:125',
-                'adresszusatz1'    => 'nullable|string|max:255',
-                'adresszusatz2'    => 'nullable|string|max:255',
-                'strasse'          => 'required|string|max:125',
-                'lkz'              => 'nullable|string|max:5',
-                'plz'              => 'required|string|max:10',
-                'ort'              => 'required|string|max:125',
-                'email_priv'       => 'required|email|max:255',
-                'telefon1'         => 'required|string|max:100',
-                'telefon2'         => 'nullable|string|max:100',
-                'geburt_datum'     => 'required|date',
-                'geburt_ort'       => 'required|string|max:125',
-                'nationalitaet'    => 'required|string|max:50',
-                'werbetraeger'     => 'nullable|string|max:100',
-                'schulbildung'     => 'nullable|string|max:15',
-                'beruf_studium'    => 'nullable|string|max:60',
-                'stud_richtung'    => 'nullable|string|max:50',
-                'stud_semester'    => 'nullable|integer|min:0|max:99',
-                'beruf_branche'    => 'nullable|string|max:4',
-                'edv_vorkenntnis'  => 'nullable|string|max:10',
-                'eng_vorkenntnis'  => 'nullable|string|max:10',
-                'katalog_kz'       => 'nullable|string|max:20',
-                'qualifiz_art'     => 'required|string|max:20',
-                'foreign_id'       => 'nullable|string|max:50',
+{
+    $this->connectToUvsDatabase();
 
-            ]);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            // optional: Business-Activity fürs Validierungsversagen
-            activity('uvs')
-                ->causedBy($request->user())
-                ->withProperties([
-                    'event'   => 'participant.validation_failed',
-                    'errors'  => $e->errors(),
-                    'api_key_id' => optional($request->attributes->get('apiKey'))->id,
-                ])->log('Participant Data validation failed');
-    
-            return response()->json([
-                'message' => 'Validation failed',
-                'errors'  => $e->errors(),
-            ], 422);
-        }
+    try {
+        $data = $request->validate([
+            'institut_id'      => 'required|integer',
+            'geschlecht'       => 'required|string|in:M,W,D,S',
+            'titel_kennz'      => 'nullable|string|max:10',
+            'nachname'         => 'required|string|max:125',
+            'vorname'          => 'required|string|max:125',
+            'adresszusatz1'    => 'nullable|string|max:255',
+            'adresszusatz2'    => 'nullable|string|max:255',
+            'strasse'          => 'required|string|max:125',
+            'lkz'              => 'nullable|string|max:5',
+            'plz'              => 'required|string|max:10',
+            'ort'              => 'required|string|max:125',
+            'email_priv'       => 'required|email|max:255',
+            'telefon1'         => 'required|string|max:100',
+            'telefon2'         => 'nullable|string|max:100',
+            'geburt_datum'     => 'required|date',
+            'geburt_ort'       => 'required|string|max:125',
+            'nationalitaet'    => 'required|string|max:50',
+            'werbetraeger'     => 'nullable|string|max:100',
+            'schulbildung'     => 'nullable|string|max:15',
+            'beruf_studium'    => 'nullable|string|max:60',
+            'stud_richtung'    => 'nullable|string|max:50',
+            'stud_semester'    => 'nullable|integer|min:0|max:99',
+            'beruf_branche'    => 'nullable|string|max:4',
+            'edv_vorkenntnis'  => 'nullable|string|max:10',
+            'eng_vorkenntnis'  => 'nullable|string|max:10',
+            'katalog_kz'       => 'nullable|string|max:20',
+            'qualifiz_art'     => 'required|string|max:20',
 
-        $db = DB::connection('uvs');
-        $now = Carbon::now()->format('Y/m/d');
-        $institut_id = $data['institut_id'];
+            'hubspot_deal_id'  => 'nullable|string|max:64',
+        ]);
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        activity('uvs')
+            ->causedBy($request->user())
+            ->withProperties([
+                'event'      => 'participant.validation_failed',
+                'errors'     => $e->errors(),
+                'api_key_id' => optional($request->attributes->get('apiKey'))->id,
+            ])
+            ->log('Participant Data validation failed');
 
-        try {
-            $db->beginTransaction();
+        return response()->json([
+            'message' => 'Validation failed',
+            'errors'  => $e->errors(),
+        ], 422);
+    }
 
-            $exists = $db->table('person')
-                ->where('institut_id', $institut_id)
-                ->where('geschlecht', $data['geschlecht'])
-                ->where('vorname', $data['vorname'])
-                ->where('nachname', $data['nachname'])
-                ->whereDate('geburt_datum', $data['geburt_datum'])
-                ->exists();
+    $db = DB::connection('uvs');
+    $now = Carbon::now()->format('Y/m/d');
+    $institutId = (int) $data['institut_id'];
+    $geburtDatum = Carbon::parse($data['geburt_datum'])->format('Y/m/d');
+    $hubspotDealId = trim((string)($data['hubspot_deal_id'] ?? ''));
+    $apiKey = $request->attributes->get('apiKey');
 
-            if ($exists) {
+    try {
+        $db->beginTransaction();
+
+        $existingPerson = $db->table('person')
+            ->select('uid', 'person_id')
+            ->where('institut_id', $institutId)
+            ->where('geschlecht', $data['geschlecht'])
+            ->where('vorname', $data['vorname'])
+            ->where('nachname', $data['nachname'])
+            ->where('geburt_datum', $geburtDatum)
+            ->first();
+
+        if ($existingPerson) {
+            if ($hubspotDealId !== '') {
+                $pendingExists = $db->table('x_hubspot')
+                    ->where('person_uid', $existingPerson->uid)
+                    ->where('table_name', 'person')
+                    ->where('table_item_id', $hubspotDealId)
+                    ->where('hubspot_deal_id', $hubspotDealId)
+                    ->exists();
+
+                if (!$pendingExists) {
+                    $db->table('x_hubspot')->insert([
+                        'person_uid' => $existingPerson->uid,
+                        'table_name' => 'person',
+                        'table_item_id' => $hubspotDealId,
+                        'hubspot_deal_id' => $hubspotDealId,
+                    ]);
+                }
+
+                $db->commit();
+
                 activity('uvs')
-                ->causedBy($request->user())
-                ->withProperties([
-                    'event'         => 'participant.duplicate',
-                    'institut_id'   => $institut_id,
-                    'vorname'       => $data['vorname'],
-                    'nachname'      => $data['nachname'],
-                    'geburt_datum'  => $data['geburt_datum'],
-                    'email_masked'  => $this->maskEmail($data['email_priv']),
-                    // Optional hilfreich: referenziere den genutzten ApiKey **ohne** Token
-                    'api_key_id'    => optional($request->attributes->get('apiKey'))->id,
-                ])
-                ->log('Duplicate participant detected');
-                return response()->json(['message' => 'Duplicate person found'], 409);
+                    ->causedBy($request->user())
+                    ->withProperties([
+                        'event'           => 'participant.pending_hubspot_deal_saved',
+                        'institut_id'     => $institutId,
+                        'person_id'       => $existingPerson->person_id,
+                        'hubspot_deal_id' => $hubspotDealId,
+                        'api_key_id'      => optional($apiKey)->id,
+                    ])
+                    ->log('Pending HubSpot deal mapping saved for existing participant');
+
+                return response()->json([
+                    'message' => 'HubSpot Deal-ID als Pending-Mapping gespeichert',
+                    'person_id' => $existingPerson->person_id,
+                    'hubspot_deal_id' => $hubspotDealId,
+                ]);
             }
 
-            $max = $db->table('person')->where('person_nr', 'like', '0%')->max('person_nr');
-            $person_nr = str_pad((int)$max + 1, 7, '0', STR_PAD_LEFT);
-            $person_id = $institut_id . '-' . $person_nr;
-
-            $db->table('person')->insert([
-                'institut_id'     => $institut_id,
-                'person_nr'       => $person_nr,
-                'person_id'       => $person_id,
-                'geschlecht'      => $data['geschlecht'],
-                'titel_kennz'     => $data['titel_kennz'] ?? null,
-                'nachname'        => $data['nachname'],
-                'vorname'         => $data['vorname'],
-                'strasse'         => $data['strasse'],
-                'lkz'             => $data['lkz'] ?? null,
-                'plz'             => $data['plz'],
-                'ort'             => $data['ort'],
-                'adresszusatz1'   => $data['adresszusatz1'] ?? null,
-                'adresszusatz2'   => $data['adresszusatz2'] ?? null,
-                'geburt_datum'    => $data['geburt_datum'],
-                'geburt_ort'      => $data['geburt_ort'],
-                'nationalitaet'   => $data['nationalitaet'],
-                'email_priv'      => $data['email_priv'],
-                'telefon1'        => $data['telefon1'],
-                'telefon2'        => $data['telefon2'] ?? null,
-                'upd_date'        => $now,
-                'foreign_id'      => $data['foreign_id'] ?? null,
-                'referrer'        => optional($request->attributes->get('apiKey'))->name ?? null,
-            ]);
-
-            $interessent_nr = $person_nr . '00';
-            $interessent_id = $institut_id . '-' . $interessent_nr;
-
-            $interess_data = [
-                'institut_id'     => $institut_id,
-                'interessent_id'  => $interessent_id,
-                'person_id'       => $person_id,
-                'interessent_nr'  => $interessent_nr,
-                'person_nr'       => $person_nr,
-                'upd_date'        => $now,
-                'erst_k_datum'    => $now,
-                'kontakt_status'  => 'K',
-                'werbetraeger'    => $data['werbetraeger'] ?? null,
-                'schulbildung'    => $data['schulbildung'] ?? null,
-                'beruf_studium'   => $data['beruf_studium'] ?? null,
-                'stud_richtung'   => $data['stud_richtung'] ?? null,
-                'stud_semester'   => $data['stud_semester'] ?? null,
-                'beruf_gattung'   => $data['beruf_branche'] ?? null,
-                'edv_vorkenntnis' => $data['edv_vorkenntnis'] ?? null,
-                'eng_vorkenntnis' => $data['eng_vorkenntnis'] ?? null,
-                'katalog_kz'      => $data['katalog_kz'] ?? null,
-                'qualifiz_art'    => $data['qualifiz_art'],
-            ];
-
-            $db->table('interess')->insert($interess_data);
-            $db->commit();
+            $db->rollBack();
 
             activity('uvs')
+                ->causedBy($request->user())
+                ->withProperties([
+                    'event'        => 'participant.duplicate',
+                    'institut_id'  => $institutId,
+                    'vorname'      => $data['vorname'],
+                    'nachname'     => $data['nachname'],
+                    'geburt_datum' => $geburtDatum,
+                    'email_masked' => $this->maskEmail($data['email_priv']),
+                    'api_key_id'   => optional($apiKey)->id,
+                ])
+                ->log('Duplicate participant detected');
+
+            return response()->json(['message' => 'Duplicate person found'], 409);
+        }
+
+        $maxPersonNr = $db->table('person')
+            ->where('person_nr', 'like', '0%')
+            ->lockForUpdate()
+            ->max('person_nr');
+
+        $personNr = str_pad(((int) $maxPersonNr) + 1, 7, '0', STR_PAD_LEFT);
+        $personId = $institutId . '-' . $personNr;
+
+        $personUid = $db->table('person')->insertGetId([
+            'institut_id'   => $institutId,
+            'person_nr'     => $personNr,
+            'person_id'     => $personId,
+            'geschlecht'    => $data['geschlecht'],
+            'titel_kennz'   => $data['titel_kennz'] ?? null,
+            'nachname'      => $data['nachname'],
+            'vorname'       => $data['vorname'],
+            'strasse'       => $data['strasse'],
+            'lkz'           => $data['lkz'] ?? null,
+            'plz'           => $data['plz'],
+            'ort'           => $data['ort'],
+            'adresszusatz1' => $data['adresszusatz1'] ?? null,
+            'adresszusatz2' => $data['adresszusatz2'] ?? null,
+            'geburt_datum'  => $geburtDatum,
+            'geburt_ort'    => $data['geburt_ort'],
+            'nationalitaet' => $data['nationalitaet'],
+            'email_priv'    => $data['email_priv'],
+            'telefon1'      => $data['telefon1'],
+            'telefon2'      => $data['telefon2'] ?? null,
+            'upd_date'      => $now,
+            'referrer'      => optional($apiKey)->name,
+        ]);
+
+        if ($hubspotDealId !== '') {
+            $db->table('x_hubspot')->insert([
+                'person_uid'      => $personUid,
+                'table_name'      => 'person',
+                'table_item_id'   => $hubspotDealId,
+                'hubspot_deal_id' => $hubspotDealId,
+            ]);
+        }
+
+        $interessentNr = $personNr . '00';
+        $interessentId = $institutId . '-' . $interessentNr;
+
+        $db->table('interess')->insert([
+            'institut_id'     => $institutId,
+            'interessent_id'  => $interessentId,
+            'person_id'       => $personId,
+            'interessent_nr'  => $interessentNr,
+            'person_nr'       => $personNr,
+            'upd_date'        => $now,
+            'erst_k_datum'    => $now,
+            'kontakt_status'  => 'K',
+            'werbetraeger'    => $data['werbetraeger'] ?? null,
+            'schulbildung'    => $data['schulbildung'] ?? null,
+            'beruf_studium'   => $data['beruf_studium'] ?? null,
+            'stud_richtung'   => $data['stud_richtung'] ?? null,
+            'stud_semester'   => $data['stud_semester'] ?? null,
+            'beruf_gattung'   => $data['beruf_branche'] ?? null,
+            'edv_vorkenntnis' => $data['edv_vorkenntnis'] ?? null,
+            'eng_vorkenntnis' => $data['eng_vorkenntnis'] ?? null,
+            'katalog_kz'      => $data['katalog_kz'] ?? null,
+            'qualifiz_art'    => $data['qualifiz_art'],
+        ]);
+
+        $db->commit();
+
+        activity('uvs')
             ->causedBy($request->user())
             ->withProperties([
                 'event'           => 'participant.created',
-                'institut_id'     => $institut_id,
-                'person_id'       => $person_id,
-                'interessent_id'  => $interessent_id,
+                'institut_id'     => $institutId,
+                'person_id'       => $personId,
+                'person_uid'      => $personUid,
+                'interessent_id'  => $interessentId,
+                'has_deal_mapping'=> $hubspotDealId !== '',
                 'email_masked'    => $this->maskEmail($data['email_priv']),
                 'telefon1_suffix' => $this->suffix($data['telefon1']),
-                'api_key_id'      => optional($request->attributes->get('apiKey'))->id, // kein Token!
+                'api_key_id'      => optional($apiKey)->id,
             ])
             ->log('Participant and Interessent created');
 
-            return response()->json([
-                'message' => 'Person + Interessent erfolgreich gespeichert',
-                'person_id' => $person_id,
-                'interessent_id' => $interessent_id,
-            ]);
+        return response()->json([
+            'message'        => 'Person + Interessent erfolgreich gespeichert',
+            'person_uid'     => $personUid,
+            'person_id'      => $personId,
+            'interessent_id' => $interessentId,
+            'hubspot_deal_id'=> $hubspotDealId !== '' ? $hubspotDealId : null,
+        ], 201);
 
-        } catch (\Throwable $e) {
-            $db->rollBack();
-            activity('uvs')
+    } catch (\Throwable $e) {
+        $db->rollBack();
+
+        activity('uvs')
             ->causedBy($request->user())
             ->withProperties([
                 'event'         => 'participant.create_failed',
                 'institut_id'   => $data['institut_id'] ?? null,
                 'error_class'   => get_class($e),
                 'error_message' => $e->getMessage(),
-                'api_key_id'    => optional($request->attributes->get('apiKey'))->id,
+                'api_key_id'    => optional($apiKey)->id,
             ])
             ->log('Participant creation failed');
-            return response()->json(['error' => 'Fehler: ' . $e->getMessage()], 500);
-        }
+
+        return response()->json(['error' => 'Fehler: ' . $e->getMessage()], 500);
     }
+}
 
     public function get(Request $request)
     {
