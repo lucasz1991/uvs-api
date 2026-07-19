@@ -303,35 +303,39 @@ class ParticipantApiController extends BaseUvsController
             return response()->json(['message' => 'Person not found'], 404);
         }
 
-        // Falls eine bestimmte Beratung gewünscht ist (Query-Param), sonst "neueste" Beratung ermitteln
+        // Falls eine bestimmte Beratung gewünscht ist (Query-Param), bleibt
+        // diese Auswahl unverändert. Sonst den ersten noch offenen Vertrag
+        // in der chronologischen Vertragskette verwenden.
         $beratungId = $request->query('beratung_id');
 
         if (!$beratungId) {
-            $beratungRow = $db->table('xvertrag AS xv')
+            $vertragRows = $db->table('xvertrag AS xv')
                 ->leftJoin('ivertrag AS iv', 'iv.beratung_id', '=', 'xv.beratung_id')
                 ->leftJoin('tvertrag AS tv', 'tv.teilnehmer_id', '=', 'xv.teilnehmer_id')
                 ->leftJoin('person AS p', 'p.person_id', '=', 'iv.person_id')
                 ->where('p.person_id', $person_id)
-                //  falls kuendigung (kuendig_datum) yyyy/mm/dd gesetzt dann ignorieren aber wenn gesetzt erst ab dem kuendig_zum dd/mm/yyyy Datum
-                ->where(function ($query) {
-                    $query->whereNull('iv.kuendig_zum')
-                          ->orWhere('iv.kuendig_zum', '')
-                          ->orWhereRaw(
-                              "STR_TO_DATE(iv.kuendig_zum, '%d/%m/%Y') > ?",
-                              [Carbon::today()->toDateString()]
-                          );
-                })
-                ->orderByDesc('tv.vertrag_beginn')
-                ->select('xv.beratung_id')
-                ->first();
-            if (!$beratungRow) {
+                ->select([
+                    'xv.beratung_id',
+                    'tv.teilnehmer_id',
+                    'tv.teilnehmer_nr',
+                    'tv.vertrag_beginn',
+                    'tv.vertrag_ende',
+                    'iv.kuendig_zum',
+                ])
+                ->get();
+
+            $selectedVertrag = ParticipantContractSelector::select(
+                $vertragRows,
+                Carbon::today('Europe/Berlin')
+            );
+            if (!$selectedVertrag) {
                 return response()->json([
                     'person' => $person,
                     'quali_data' => null,
                     'message' => 'No contract found for this person',
                 ], 200);
             }
-            $beratungId = $beratungRow->beratung_id;
+            $beratungId = $selectedVertrag['beratung_id'];
         }
 
         // Haupt-Qualiprogramm + Vertragsdaten laden (entspricht deinem $query_str)
@@ -394,6 +398,7 @@ class ParticipantApiController extends BaseUvsController
 
         $qualiprog = [];
         // Basis-Felder aus Vertrag
+        $qualiprog['beratung_id']      = $beratungId;
         $qualiprog['teilnehmer_id']   = $qualiBase->teilnehmer_id;
         $qualiprog['teilnehmer_nr']   = $qualiBase->teilnehmer_nr;
         $qualiprog['geschlecht']      = $qualiBase->geschlecht;

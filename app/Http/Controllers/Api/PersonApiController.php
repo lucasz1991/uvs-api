@@ -56,7 +56,7 @@ class PersonApiController extends BaseUvsController
             }
         };
 
-        $today = Carbon::today();
+        $today = Carbon::today('Europe/Berlin');
 
         // Load participant contracts including cancelled ones.
         // xvertrag/ivertrag are 1:n, so we deduplicate after mapping.
@@ -65,37 +65,39 @@ class PersonApiController extends BaseUvsController
             ->leftJoin('ivertrag AS iv', 'iv.beratung_id', '=', 'xv.beratung_id')
             ->where('tv.person_nr', $personNr)
             ->where('tv.institut_id', $institutId)
-            ->orderByDesc('tv.vertrag_ende')
             ->select([
+                'xv.beratung_id',
                 'tv.teilnehmer_id',
                 'tv.teilnehmer_nr',
                 'tv.letzter_tag',
+                'tv.vertrag_beginn',
                 'tv.vertrag_ende',
                 'iv.kuendig_zum',
             ])
             ->get()
-            ->map(function ($row) use ($parseDate, $today) {
+            ->map(function ($row) use ($parseDate) {
                 $kuendigDate = $parseDate($row->kuendig_zum ?? null);
                 $vertragEndeDate = $parseDate($row->vertrag_ende ?? null);
-                $isActive = (! $kuendigDate || $kuendigDate->gte($today))
-                    && (! $vertragEndeDate || $vertragEndeDate->gte($today));
 
                 return [
+                    'beratung_id' => $row->beratung_id ?? null,
                     'teilnehmer_id' => $row->teilnehmer_id ?? null,
                     'teilnehmer_nr' => $row->teilnehmer_nr ?? null,
                     'letzter_tag' => $row->letzter_tag ?? null,
+                    'vertrag_beginn' => $row->vertrag_beginn ?? null,
                     'vertrag_ende' => $row->vertrag_ende ?? null,
                     'kuendig_zum' => $row->kuendig_zum ?? null,
-                    'is_active' => $isActive,
                     '_kuendig_ts' => $kuendigDate?->timestamp ?? 0,
                     '_vertrag_ende_ts' => $vertragEndeDate?->timestamp ?? 0,
                 ];
             })
             ->groupBy(function ($row) {
                 return implode('|', [
+                    $row['beratung_id'] ?? '',
                     $row['teilnehmer_id'] ?? '',
                     $row['teilnehmer_nr'] ?? '',
                     $row['letzter_tag'] ?? '',
+                    $row['vertrag_beginn'] ?? '',
                     $row['vertrag_ende'] ?? '',
                 ]);
             })
@@ -109,24 +111,17 @@ class PersonApiController extends BaseUvsController
             })
             ->values();
 
-        // Selection rule:
-        // 1) Active contract with largest vertrag_ende
-        // 2) Otherwise latest cancelled contract
-        $selectedVertrag = $vertragRows
-            ->where('is_active', true)
-            ->sortByDesc('_vertrag_ende_ts')
-            ->first();
-
-        if (!$selectedVertrag) {
-            $selectedVertrag = $vertragRows
-                ->sortByDesc('_vertrag_ende_ts')
-                ->first();
-        }
+        // Consecutive contracts stay relevant even when the follow-up contract
+        // begins in the future. The oldest still-open contract is current.
+        $selectedVertrag = ParticipantContractSelector::select($vertragRows, $today);
+        $vertragRows = collect(ParticipantContractSelector::evaluate($vertragRows, $today));
 
         $teilnehmerId = $selectedVertrag['teilnehmer_id'] ?? null;
         $teilnehmerNr = $selectedVertrag['teilnehmer_nr'] ?? null;
         $lastTnDatumStr = $selectedVertrag['letzter_tag'] ?? null;
         $vertragKuendigZum = $selectedVertrag['kuendig_zum'] ?? null;
+        $vertragBeginn = $selectedVertrag['vertrag_beginn'] ?? null;
+        $beratungId = $selectedVertrag['beratung_id'] ?? null;
 
         $absolvent = DB::connection('uvs')->table('absolven')
             ->where('person_id', $personId)
@@ -210,6 +205,8 @@ class PersonApiController extends BaseUvsController
 
                 'teilnehmer_id'    => $teilnehmerId,
                 'teilnehmer_nr'    => $teilnehmerNr,
+                'beratung_id'      => $beratungId,
+                'vertrag_beginn'   => $vertragBeginn,
                 'absolvent_nr'     => $absolventNr,
                 'interessent_nr'   => $interessentNr,
                 'mitarbeiter_id'   => $mitarbeiterId,
@@ -223,12 +220,15 @@ class PersonApiController extends BaseUvsController
 
                 'vertraege' => $vertragRows
                     ->map(fn($v) => [
+                        'beratung_id' => $v['beratung_id'],
                         'teilnehmer_id' => $v['teilnehmer_id'],
                         'teilnehmer_nr' => $v['teilnehmer_nr'],
                         'letzter_tag' => $v['letzter_tag'],
+                        'vertrag_beginn' => $v['vertrag_beginn'],
                         'vertrag_ende' => $v['vertrag_ende'],
                         'kuendig_zum' => $v['kuendig_zum'],
                         'is_active' => $v['is_active'],
+                        'is_current' => $v['is_current'],
                     ])
                     ->values(),
 

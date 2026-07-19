@@ -155,6 +155,9 @@ class CourseApiController extends BaseUvsController
             ->get([
                 'p.*', 
                 DB::raw('tuk.klassen_id as klassen_id'),
+                DB::raw('tuk.teilnehmer_id as teilnehmer_id'),
+                DB::raw('tuk.tn_baustein_id as tn_baustein_id'),
+                DB::raw('tuk.baustein_id as baustein_id'),
             ]);
 
         return response()->json([
@@ -235,6 +238,9 @@ class CourseApiController extends BaseUvsController
             ->get([
                 'p.*', 
                 DB::raw('tuk.klassen_id as klassen_id'),
+                DB::raw('tuk.teilnehmer_id as teilnehmer_id'),
+                DB::raw('tuk.tn_baustein_id as tn_baustein_id'),
+                DB::raw('tuk.baustein_id as baustein_id'),
             ]);
 
         // Dozenten/Lehrkräfte
