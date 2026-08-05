@@ -8,6 +8,8 @@ use App\Http\Controllers\Api\TutorApiController;
 use App\Http\Controllers\Api\CourseApiController;
 use App\Http\Controllers\Api\AssetsApiController;
 use App\Http\Controllers\Api\UVSApiController;
+use App\Http\Controllers\Api\DocumentApiController;
+use App\Http\Middleware\ApiKeyMiddleware;
 
 use App\Http\Controllers\Api\SqlApiController;
 
@@ -53,3 +55,24 @@ Route::get('/uvs/module-overview', [UVSApiController::class, 'getModuleOverview'
 Route::get('/uvs/participant-rate-selection', [UVSApiController::class, 'getParticipantRateSelection'])->name('uvs.participant-rate-selection.get');
 
 Route::post('/sql', [SqlApiController::class, 'run'])->name('sql.run');
+
+
+/*
+|--------------------------------------------------------------------------
+| Dokumentbereitstellung fuer Make (HubSpot-Sync UVS-02)
+|--------------------------------------------------------------------------
+|
+| sign: nur das UVS darf signierte URLs erzeugen -> API-Key erforderlich.
+| pdf : wird von Make abgerufen. Kein API-Key, sondern ausschliesslich die
+|       Laravel-Signatur inkl. Ablaufzeit ('signed').
+|
+*/
+
+Route::post('/documents/sign', [DocumentApiController::class, 'sign'])
+    ->name('documents.sign');
+
+Route::get('/documents/{typ}/pdf', [DocumentApiController::class, 'show'])
+    ->middleware('signed')
+    ->withoutMiddleware([ApiKeyMiddleware::class])
+    ->where('typ', 'angebot|vertrag')
+    ->name('documents.pdf');

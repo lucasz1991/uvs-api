@@ -40,7 +40,7 @@ class ApiKeyFormModal extends Component
     public function mount(): void
     {
         $this->availableAbilities = array_values(config('api.abilities', [
-            'participants.store', 'participants.get', 'participants.update', 'participants.delete', 'uvs.due-dates-management.get', 'uvs.module-overview.get', 'uvs.participant-rate-selection.get', 'all',
+            'participants.store', 'participants.get', 'participants.update', 'participants.delete', 'documents.sign', 'uvs.due-dates-management.get', 'uvs.module-overview.get', 'uvs.participant-rate-selection.get', 'all',
         ]));
     }
 
