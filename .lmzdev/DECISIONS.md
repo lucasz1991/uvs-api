@@ -61,3 +61,21 @@ Record durable decisions with date, context, decision, and consequences.
 - Context: `ApiKeyMiddleware` authorizes requests against the current Laravel route name.
 - Decision: Add `documents.sign` to the existing `ApiKeyFormModal` ability options; do not add a separate panel mapping because `UserApiKeysPanel` already displays all stored abilities generically.
 - Consequence: Administrators can grant only URL-signing access without granting `all`, and the stored value matches the middleware check exactly.
+
+## 2026-08-05 - Supersede API-key protection for document signing
+
+- Context: The user clarified that document URL creation must always be callable without an API key.
+- Decision: Remove `documents.sign` from the API-key selection and explicitly exclude `ApiKeyMiddleware` on `POST /api/documents/sign`, matching the existing exclusion on the signed PDF route.
+- Consequence: Callers need no API key for signing. Document type, allowed directory, existing readable PDF, expiring signed download URL, and the normal API throttle remain enforced.
+
+## 2026-08-05 - Run the PDF permission test inside the API settings request
+
+- Context: A CLI test can run under a different Windows account and therefore cannot prove IIS application-pool access to the sibling `uvs_dev` directory.
+- Decision: Place the test in the existing `DatabaseTester` under Settings -> Basis. The Livewire action inspects both allowed directories and opens one PDF per document type from the real configured root.
+- Consequence: Clicking the button after deployment tests the actual PHP/IIS identity and reports physical path, PDF counts, readable counts, sample file, size, and PDF-header validity. The CBW admin API-test integration is removed.
+
+## 2026-08-05 - Package the API update without a wrapper directory
+
+- Context: The user wants to extract the archive directly inside the Laravel `uvs_api` installation and overwrite files in place.
+- Decision: Archive exactly seven explicit source files with `app/`, `config/`, `public/`, `resources/`, and `routes/` at ZIP root. Include `config/uvs.php` and `public/web.config` so the document feature remains self-contained; exclude runtime data, secrets, tests, dependencies, and coordination files.
+- Consequence: Extraction in the API root overlays only the intended paths. Source, unpacked-folder, and archive bytes are verified identical.

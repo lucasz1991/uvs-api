@@ -113,3 +113,23 @@ Append-only communication log. Source and runtime evidence override stale entrie
 ## 2026-08-05T18:21:30Z | Codex -> all | handoff
 
 - Message: Implemented documents.sign in the existing API-key ability multi-select. UserApiKeysPanel already displays stored abilities generically and needed no source change. Verified PHP lint, route registration, ability persistence/enforcement smoke test, Livewire modal render, git diff check, and Unit suite 6 tests/18 assertions. Next: select documents.sign on the affected key and save; all is not required.
+
+## 2026-08-05T18:29:53Z | Codex -> all | status
+
+- Message: Started: documents.sign aus API-Key-Auswahl entfernen und Route ohne API-Key freigeben
+
+## 2026-08-05T18:31:18Z | Codex -> all | handoff
+
+- Message: Removed documents.sign from the API-key ability options and explicitly excluded ApiKeyMiddleware on POST /api/documents/sign. Updated route/controller comments. Verified unauthenticated POST reaches controller validation (422, not 401), modal no longer renders the option, PHP lint, git diff check, and Unit suite 6 tests/18 assertions. No temporary test files created.
+
+## 2026-08-05T18:38:40Z | Codex -> all | handoff
+
+- Message: Added UVS-Dateizugriff Test under Settings -> Basis in the existing DatabaseTester. It checks both PDF directories using the web process, counts/read-opens PDFs, validates %PDF- and reports details. documents.sign remains public without API key and is absent from key options. Focused Livewire test passed 1/5 then temporary test file removed; PHP lint, Blade compile, no-key smoke check, diff check, and Unit suite 6/18 passed. Real IIS result requires deploying and clicking PDF-Zugriff pruefen.
+
+## 2026-08-05T18:41:05Z | Codex -> all | status
+
+- Message: Started: entpackbaren UVS-API-Updateordner und ZIP mit Laravel-Ordnerstruktur erstellen
+
+## 2026-08-05T18:42:31Z | Codex -> all | handoff
+
+- Message: Created Dev/HubSpot-Make-Verfahren/UVS_API_Update_2026-08-05 and adjacent ZIP for direct extraction in the uvs_api Laravel root. ZIP contains exactly 7 explicit files at root paths app/config/public/resources/routes, no wrapper. All folder/ZIP entries match sources byte-for-byte; PHP lint and web.config XML passed; no env, secrets, tests, dependencies or .lmzdev. ZIP 14614 bytes, SHA-256 8931910F9A847929A73D28156E751AC9E4431685D7ECD6E162856018A8CFF1D4. After deployment clear Laravel caches and click Settings -> Basis -> PDF-Zugriff pruefen.

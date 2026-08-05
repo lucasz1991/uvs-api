@@ -62,13 +62,15 @@ Route::post('/sql', [SqlApiController::class, 'run'])->name('sql.run');
 | Dokumentbereitstellung fuer Make (HubSpot-Sync UVS-02)
 |--------------------------------------------------------------------------
 |
-| sign: nur das UVS darf signierte URLs erzeugen -> API-Key erforderlich.
-| pdf : wird von Make abgerufen. Kein API-Key, sondern ausschliesslich die
-|       Laravel-Signatur inkl. Ablaufzeit ('signed').
+| sign: frei erreichbar, ohne API-Key. Pfad und Dokumenttyp werden im
+|       Controller gegen die freigegebenen PDF-Verzeichnisse geprueft.
+| pdf : wird ueber die erzeugte URL abgerufen. Kein API-Key, sondern
+|       ausschliesslich die Laravel-Signatur inkl. Ablaufzeit ('signed').
 |
 */
 
 Route::post('/documents/sign', [DocumentApiController::class, 'sign'])
+    ->withoutMiddleware([ApiKeyMiddleware::class])
     ->name('documents.sign');
 
 Route::get('/documents/{typ}/pdf', [DocumentApiController::class, 'show'])

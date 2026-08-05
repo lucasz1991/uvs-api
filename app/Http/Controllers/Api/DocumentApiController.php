@@ -20,9 +20,10 @@ use Illuminate\Support\Facades\URL;
  * Dateien unmittelbar vom Dateisystem (config/uvs.php -> 'root').
  *
  * Sicherheitsprinzip:
- *  - sign()  ist per API-Key geschuetzt (nur das UVS darf URLs erzeugen).
- *  - show()  ist NICHT per API-Key geschuetzt, sondern ausschliesslich durch
- *            die Laravel-Signatur inkl. Ablaufzeit ('signed'-Middleware).
+ *  - sign()  ist bewusst ohne API-Key erreichbar und gibt nur URLs fuer
+ *            vorhandene PDFs in den explizit freigegebenen Ordnern aus.
+ *  - show()  ist ebenfalls nicht per API-Key geschuetzt, sondern durch die
+ *            Laravel-Signatur inkl. Ablaufzeit ('signed'-Middleware).
  *  - Beide Wege pruefen den Pfad erneut gegen die freigegebenen Verzeichnisse,
  *    damit ueber diesen Endpunkt keine anderen Dateien lesbar werden.
  */

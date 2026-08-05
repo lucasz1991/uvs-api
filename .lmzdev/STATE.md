@@ -34,8 +34,13 @@
 - Refreshed deployment ZIP contains 12 source-matching files under the expected wrapper, verified byte-for-byte; 37,859 bytes, SHA-256 `C9A8D6DF8E360BB01D06C611D16B7DB4E9345CF73E7567B878A1D3FDBE8D02A4`.
 - All three IIS `public/web.config` copies are valid XML and byte-identical, SHA-256 `28D77E235EA6E5EA227F5B8CFAA32B39285A26A1D1C671CF82059D2B0E337330`. Unit suite remains 6 tests / 18 assertions and both document routes remain registered.
 - The deployment ZIP now contains 13 source-matching files including `uvs-api/public/web.config`, verified byte-for-byte; 38,465 bytes, SHA-256 `0467EE58078D8CFCE7E26BEFB66EF83EEA1FCB10C940FA5A18217702298308A5`.
-- `documents.sign` is now offered in the existing API-key ability multi-select; selected values continue to be stored in `settings.abilities` and displayed generically by `UserApiKeysPanel`.
-- Verification passed for PHP lint, the registered `documents.sign` route, modal rendering, ability enforcement, `git diff --check`, and the Unit suite (6 tests / 18 assertions).
+- `POST /api/documents/sign` explicitly excludes `ApiKeyMiddleware` and is absent from the API-key ability multi-select. The signed PDF GET remains protected by Laravel's expiring URL signature.
+- Verification passed for PHP lint, route registration, a real internal POST without API key returning controller validation 422 instead of middleware 401, modal rendering without `documents.sign`, `git diff --check`, and the Unit suite (6 tests / 18 assertions).
+- Settings -> Basis now contains a server-side `UVS-Dateizugriff Test` in the existing `DatabaseTester`. It checks both configured document directories, counts PDFs, opens one readable file per type, and validates the `%PDF-` header under the actual web-process identity.
+- The focused Livewire feature check passed 1 test / 5 assertions and its temporary test file was removed afterwards. Focused Blade compilation, PHP lint, route/no-key smoke check, `git diff --check`, and Unit suite 6 tests / 18 assertions passed.
+- Deployment folder `Dev/HubSpot-Make-Verfahren/UVS_API_Update_2026-08-05` and adjacent ZIP now contain the seven explicit API files required for the public document routes, fixed UVS path/IIS rewrite, API-key option removal, and Settings -> Basis file-access test.
+- The ZIP has no wrapper directory: entries start directly with `app/`, `config/`, `public/`, `resources/`, and `routes/`. All seven folder and ZIP entries are SHA-256 identical to current sources; ZIP is 14,614 bytes with SHA-256 `8931910F9A847929A73D28156E751AC9E4431685D7ECD6E162856018A8CFF1D4`.
+- Packaged PHP lint and `public/web.config` XML validation passed; no `.env`, `.lmzdev`, tests, vendor, node_modules, or credentials are included.
 
 ## Risks and blockers
 
@@ -46,3 +51,4 @@
 - The supplied IIS root `web.config` only adds `index.php` as a default document. IIS Manager must still map `uvs_api` as an application to its `public` directory, provide Laravel URL rewriting, grant the API application-pool identity read access to the two `uvs_dev/data/pdf` directories, and set the correct HTTPS `APP_URL` before signed URLs can be proven end-to-end.
 - Public `phpinfo.php` exposes server/runtime details and should be removed or blocked after IIS diagnosis; it was not deleted because the user only asked for analysis/configuration of the document path.
 - FileZilla is connected as `lmz@192.168.1.134`, but Computer Use could not capture its visual state (`Schnittstelle nicht unterstuetzt`, `0x80004002`) and FileZilla exposed no usable accessibility tree. No blind upload or remote overwrite was performed; `public/web.config` remains pending for remote upload/verification.
+- The real IIS/App-Pool filesystem result can only be confirmed after deploying the settings component/view and clicking `PDF-Zugriff pruefen` on the server.

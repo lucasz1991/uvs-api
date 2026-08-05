@@ -13,4 +13,7 @@
 | IIS-Dokumentpfade ohne UVS_ROOT fest als uvs_api/uvs_dev-Geschwisterstruktur verankern und Update-Paket erneuern | Codex | completed | 2026-08-04 |
 | IIS-Laravel public/web.config erstellen, spiegeln und ins Update-Paket aufnehmen | Codex | completed | 2026-08-04 |
 | public/web.config ueber die bestehende FileZilla-Verbindung hochladen und remote verifizieren | Codex / User | blocked | 2026-08-04 |
-| `documents.sign` in der API-Key-Berechtigungsauswahl anbieten | Codex | completed | 2026-08-05 |
+| `documents.sign` in der API-Key-Berechtigungsauswahl anbieten | Codex | superseded | 2026-08-05 |
+| `documents.sign` aus der Auswahl entfernen und ohne API-Key freigeben | Codex | completed | 2026-08-05 |
+| UVS-PDF-Dateizugriff unter Einstellungen -> Basis pruefbar machen | Codex | completed | 2026-08-05 |
+| Direkt im uvs_api-Grundverzeichnis entpackbaren Updateordner und ZIP erstellen | Codex | completed | 2026-08-05 |

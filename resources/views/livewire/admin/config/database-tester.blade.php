@@ -1,3 +1,4 @@
+<div>
 <div class="mt-8 border-t pt-6">
     <h3 class="text-xl font-semibold mb-4">UVS Datenbank Test</h3>
 
@@ -123,4 +124,92 @@
             </div>
         </div>
     @endif
+</div>
+
+<div class="mt-8 border-t pt-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+            <h3 class="text-xl font-semibold">UVS-Dateizugriff Test</h3>
+            <p class="mt-1 text-sm text-gray-600">
+                Prueft direkt im PHP-/IIS-Prozess, ob Angebots- und Vertrags-PDFs im UVS-Verzeichnis gelesen werden koennen.
+            </p>
+        </div>
+
+        <x-button wire:click="testDocumentAccess" wire:loading.attr="disabled" wire:target="testDocumentAccess">
+            <span wire:loading.remove wire:target="testDocumentAccess">PDF-Zugriff pruefen</span>
+            <span wire:loading wire:target="testDocumentAccess">Pruefung laeuft...</span>
+        </x-button>
+    </div>
+
+    @if ($documentAccessError)
+        <div class="mt-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700">
+            Fehler: {{ $documentAccessError }}
+        </div>
+    @endif
+
+    @if ($documentRoot)
+        <div class="mt-4 rounded border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+            <span class="font-medium">Konfigurierter UVS-Pfad:</span>
+            <code class="break-all">{{ $documentRoot }}</code>
+        </div>
+    @endif
+
+    @if ($documentAccessResults)
+        <div class="mt-4 rounded border px-4 py-3 {{ $documentAccessOk ? 'border-green-400 bg-green-100 text-green-800' : 'border-red-400 bg-red-100 text-red-800' }}">
+            {{ $documentAccessOk
+                ? 'Zugriff erfolgreich: Angebote und Vertraege sind fuer die API lesbar.'
+                : 'Zugriff fehlgeschlagen: Mindestens ein PDF-Verzeichnis oder eine PDF-Datei ist nicht lesbar.' }}
+        </div>
+
+        <div class="mt-4 grid gap-4 md:grid-cols-2">
+            @foreach ($documentAccessResults as $result)
+                <div class="rounded border bg-white p-4 {{ $result['ok'] ? 'border-green-300' : 'border-red-300' }}" wire:key="document-access-{{ $result['type'] }}">
+                    <div class="flex items-center justify-between gap-3">
+                        <h4 class="font-semibold text-gray-900">{{ $result['label'] }}</h4>
+                        <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ $result['ok'] ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700' }}">
+                            {{ $result['ok'] ? 'OK' : 'Fehler' }}
+                        </span>
+                    </div>
+
+                    <dl class="mt-3 space-y-2 text-sm">
+                        <div>
+                            <dt class="font-medium text-gray-600">Ordner</dt>
+                            <dd class="break-all font-mono text-xs text-gray-800">{{ $result['path'] ?: '-' }}</dd>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <dt class="font-medium text-gray-600">PDFs gefunden</dt>
+                                <dd>{{ $result['pdf_count'] }}</dd>
+                            </div>
+                            <div>
+                                <dt class="font-medium text-gray-600">Davon lesbar</dt>
+                                <dd>{{ $result['readable_pdf_count'] }}</dd>
+                            </div>
+                        </div>
+                        <div>
+                            <dt class="font-medium text-gray-600">Gepruefte Datei</dt>
+                            <dd class="break-all">{{ $result['sample_file'] ?: '-' }}</dd>
+                        </div>
+                        @if ($result['sample_file'])
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <dt class="font-medium text-gray-600">Dateigroesse</dt>
+                                    <dd>{{ number_format((int) $result['sample_size'], 0, ',', '.') }} Bytes</dd>
+                                </div>
+                                <div>
+                                    <dt class="font-medium text-gray-600">PDF-Dateikopf</dt>
+                                    <dd>{{ $result['pdf_header_valid'] ? 'Gueltig' : 'Ungueltig' }}</dd>
+                                </div>
+                            </div>
+                        @endif
+                    </dl>
+
+                    <p class="mt-3 text-sm {{ $result['ok'] ? 'text-green-700' : 'text-red-700' }}">
+                        {{ $result['message'] }}
+                    </p>
+                </div>
+            @endforeach
+        </div>
+    @endif
+</div>
 </div>
