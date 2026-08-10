@@ -52,3 +52,37 @@
 - Public `phpinfo.php` exposes server/runtime details and should be removed or blocked after IIS diagnosis; it was not deleted because the user only asked for analysis/configuration of the document path.
 - FileZilla is connected as `lmz@192.168.1.134`, but Computer Use could not capture its visual state (`Schnittstelle nicht unterstuetzt`, `0x80004002`) and FileZilla exposed no usable accessibility tree. No blind upload or remote overwrite was performed; `public/web.config` remains pending for remote upload/verification.
 - The real IIS/App-Pool filesystem result can only be confirmed after deploying the settings component/view and clicking `PDF-Zugriff pruefen` on the server.
+
+## 2026-08-10 | Signed-PDF-Pruefung und Download-Activity-Logs
+
+### Confirmed
+
+- `DocumentApiController::sign()` prueft vor der URL-Erzeugung erlaubten
+  Ordner, reale Datei, Lesbarkeit, Groesse, Oeffnen und `%PDF-`-Header.
+- `document.signed` protokolliert Dateiname, relativen Pfad, Groesse,
+  Aenderungszeit, Ablaufzeit, maskierte Quell-URL, URL-Hash und UVS-Kontext.
+- Der Download protokolliert `document.delivery_started`, danach erst nach
+  vollstaendig gestreamten Bytes `document.delivered`; Fehler werden als
+  `document.delivery_failed` mit Grund und Bytezahl gespeichert.
+- Der Signaturwert bleibt in Activity- und TXT-Kommunikationslogs maskiert;
+  ein SHA-256-URL-Hash korreliert Erzeugung und Abruf.
+
+### Verification
+
+- Fokustest: 4 Tests, 36 Assertions bestanden; enthalten sind erfolgreicher
+  Byte-Stream, ungueltiger PDF-Header, verschwundene Datei und URL-Maskierung.
+- Unit-Suite: 6 Tests, 18 Assertions bestanden; beide Dokumentrouten sind
+  registriert; PHP-Lint, Pint und `git diff --check` bestanden.
+- Die vollstaendige bestehende Suite hat 30 Tests bestanden; 9 unabhaengige
+  Altfehler bleiben wegen fehlender `TeamFactory`, fehlender
+  `CustomResetPasswordNotification` und bestehender Web-Testannahmen.
+- Deployment-ZIP:
+  `Dev/HubSpot-Make-Verfahren/UVS_API_Dokument_Download_ActivityLog_Fix_2026-08-10.zip`,
+  SHA-256 `ECC5E19B51EAFFA0022E631A67C3DB02A0CF0333DBA5E03964DD6F6365C2EE2D`.
+
+### Remaining risk
+
+- Ein erfolgreiches Server-Streaming beweist, dass alle Bytes an die
+  Verbindung geschrieben wurden; es kann nicht beweisen, dass Make die Datei
+  anschliessend in HubSpot gespeichert hat. Dafuer bleibt die Make-Antwort
+  massgeblich.

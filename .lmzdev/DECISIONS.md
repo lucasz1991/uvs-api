@@ -79,3 +79,16 @@ Record durable decisions with date, context, decision, and consequences.
 - Context: The user wants to extract the archive directly inside the Laravel `uvs_api` installation and overwrite files in place.
 - Decision: Archive exactly seven explicit source files with `app/`, `config/`, `public/`, `resources/`, and `routes/` at ZIP root. Include `config/uvs.php` and `public/web.config` so the document feature remains self-contained; exclude runtime data, secrets, tests, dependencies, and coordination files.
 - Consequence: Extraction in the API root overlays only the intended paths. Source, unpacked-folder, and archive bytes are verified identical.
+
+## 2026-08-10 - Log the signed-document lifecycle without retaining bearer signatures
+
+- Context: The former `document.delivered` entry was written before Laravel
+  sent the file, and URL creation only checked existence/readability without
+  recording the generated source URL or PDF integrity.
+- Decision: Validate file size, openability and `%PDF-` header during signing
+  and again during delivery. Stream the response explicitly and record start,
+  completed byte count or failure. Store the URL with its signature masked and
+  a SHA-256 hash for correlation.
+- Consequence: Activity logs distinguish URL creation, attempted download,
+  completed server delivery and failure without turning the log into a usable
+  download-token store.

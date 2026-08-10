@@ -17,3 +17,4 @@
 | `documents.sign` aus der Auswahl entfernen und ohne API-Key freigeben | Codex | completed | 2026-08-05 |
 | UVS-PDF-Dateizugriff unter Einstellungen -> Basis pruefbar machen | Codex | completed | 2026-08-05 |
 | Direkt im uvs_api-Grundverzeichnis entpackbaren Updateordner und ZIP erstellen | Codex | completed | 2026-08-05 |
+| Dokument vor Signierung validieren und URL-/Download-Lifecycle im Activity Log erfassen | Codex | completed | 2026-08-10 |

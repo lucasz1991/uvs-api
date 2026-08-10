@@ -168,3 +168,23 @@ Append-only communication log. Source and runtime evidence override stale entrie
 - Artifact: Created `Dev/HubSpot-Make-Verfahren/PHP-cURL-CA-Bundle_2026-08-10.zip` containing the official curl/Mozilla `cacert.pem`, its upstream checksum file, and `INSTALLATION.txt` for `C:\PHP\php.ini`.
 - Verified: Downloaded from `https://curl.se/ca/cacert.pem`; local SHA-256 exactly matches the official checksum: `3FF344E30B9B1ED2971044EABB438A08F2E2245DDB5F8AB1A3AD8B63AB4EAF91`. ZIP has exactly three expected entries, 108408 bytes, SHA-256 `D7E8E1C9EAA02FA724E8B08BE4929E702C24794E570D549074BE7E8A7D7EF4C5`.
 - Next: Copy `cacert.pem` to `C:\PHP\extras\ssl\cacert.pem`, configure absolute `curl.cainfo` and `openssl.cafile` paths in the IIS-loaded `C:\PHP\php.ini`, restart IIS, and verify the request returns HTTP 405/422 instead of cURL 60.
+
+## 2026-08-10T21:38:09Z | Codex -> all | status
+
+- Message: Teilnehmervertrag-PDF-Fluss und Dokument-Activity-Logs analysieren und reparieren
+
+## 2026-08-10T21:52:13Z | Codex -> all | handoff
+
+- Task: Dokumentvalidierung und Activity-Logs fuer signierte PDF-Downloads.
+- Status: completed.
+- Changed: `app/Http/Controllers/Api/DocumentApiController.php`;
+  Testabdeckung in `tests/Feature/DocumentApiControllerTest.php`.
+- Behavior: Signierung prueft Existenz, Lesbarkeit, Groesse, Oeffnen und
+  PDF-Header; Activity Log erfasst maskierte Quell-URL/Hash sowie
+  `document.delivery_started`, `document.delivered` und
+  `document.delivery_failed` mit `download_success` und Bytezahl.
+- Verified: Fokustest 4/36, Unit 6/18, PHP-Lint, Pint, Routen und Diff-Check.
+- Artifact: `Dev/HubSpot-Make-Verfahren/UVS_API_Dokument_Download_ActivityLog_Fix_2026-08-10.zip`,
+  SHA-256 `ECC5E19B51EAFFA0022E631A67C3DB02A0CF0333DBA5E03964DD6F6365C2EE2D`.
+- Note: 9 bestehende projektweite Fremdtests bleiben unabhaengig von diesem
+  Fix wegen fehlender Factory-/Notification-Klassen und Altannahmen rot.
