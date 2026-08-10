@@ -133,3 +133,38 @@ Append-only communication log. Source and runtime evidence override stale entrie
 ## 2026-08-05T18:42:31Z | Codex -> all | handoff
 
 - Message: Created Dev/HubSpot-Make-Verfahren/UVS_API_Update_2026-08-05 and adjacent ZIP for direct extraction in the uvs_api Laravel root. ZIP contains exactly 7 explicit files at root paths app/config/public/resources/routes, no wrapper. All folder/ZIP entries match sources byte-for-byte; PHP lint and web.config XML passed; no env, secrets, tests, dependencies or .lmzdev. ZIP 14614 bytes, SHA-256 8931910F9A847929A73D28156E751AC9E4431685D7ECD6E162856018A8CFF1D4. After deployment clear Laravel caches and click Settings -> Basis -> PDF-Zugriff pruefen.
+
+## 2026-08-07T08:25:50Z | Codex -> all | status
+
+- Message: Diagnose document sign API TCP timeout and public endpoint mismatch
+
+## 2026-08-07T08:28:00Z | Codex -> all | handoff
+
+- Finding: DNS `uvs.cbw-weiterbildung.de` resolves to `82.119.176.66`; TCP port `50123` is reachable from the current workstation.
+- Finding: The public endpoint responds through Microsoft IIS/Laravel. `GET /api/documents/sign` returns `405 Allow: POST`; a JSON POST reaches Laravel and returns `422` validation JSON. The route is registered locally as `POST api/documents/sign` and explicitly bypasses the API-key middleware.
+- Diagnosis: The reported Make error (`cURL 28`, HTTP status `0`, connect timeout after about 10 seconds) occurs before Laravel receives the request. It is not caused by `DocumentApiController`, PDF validation, API-key authentication, or CORS. Most likely causes are Make's source network being blocked/not routed to TCP 50123, an IP allowlist, or a transient route issue from Make's execution region. IIS access logs at the exact error time must confirm whether Make's request reached the server.
+- Local note: The API checkout's development `.env` uses `APP_URL=http://127.0.0.1:4000`, and no listener is currently present on local port 4000; this does not explain the already reachable public endpoint but must not be used as the public URL returned to Make.
+- Next: Check IIS/firewall/hosting logs for the Make request timestamp and source IP; test from Make with the exact URL and a short timeout; if no IIS log entry exists, allow/reroute Make to TCP 50123 or expose the API through the standard HTTPS port 443.
+
+## 2026-08-07T08:35:00Z | Codex -> all | handoff
+
+- Changed: Added `httpErrors existingResponse="PassThrough"` to `api/uvs-api/public/web.config` so IIS does not replace Laravel JSON/HTTP error responses used by Make. Mirrored the same change in `Dev/HubSpot-Make-Verfahren/UVS_API_Update_2026-08-05/public/web.config`.
+- Verified: Both web.config files are valid XML, byte-identical, SHA-256 `32F58CB4D150A89B8CE9C448427977A6CDFE6185B9CC3A9A0CE2C796523D14A`; Laravel document routes remain registered.
+- Note: This improves response forwarding but cannot open TCP 50123; Sophos/NAT, Windows Firewall, IIS binding, and URL Rewrite remain server-side prerequisites.
+
+## 2026-08-10T19:32:28Z | Codex -> all | status
+
+- Message: Started: Diagnose TLS issuer error for document signing API
+
+## 2026-08-10T19:35:00Z | Codex -> all | handoff
+
+- Finding: The public endpoint presents a valid wildcard certificate for `*.cbw-weiterbildung.de`, valid 2025-08-26 through 2026-08-26, plus the `Certum Domain Validation CA SHA2` intermediate certificate.
+- Verification: Windows Schannel cURL and the local PHP/OpenSSL cURL client both validate the endpoint and receive the expected HTTP 405 for a HEAD request. An OpenSSL client without a configured CA trust store reproduces `unable to get local issuer certificate`.
+- Diagnosis: Runtime error `CURLE_PEER_FAILED_VERIFICATION (60)` is client-side CA trust failure in the PHP process executing the UVS helper, not a missing HTTPS binding, port failure, Laravel route failure, or hostname mismatch. The IIS PHP runtime likely has an empty, unreadable, or outdated `curl.cainfo` / `openssl.cafile` CA bundle.
+- Security: Keep peer verification enabled. Configure an absolute readable CA-bundle path in the php.ini actually loaded by IIS/PHP-FastCGI, recycle IIS/App Pool, then repeat the document-sign request.
+
+## 2026-08-10T19:52:00Z | Codex -> all | handoff
+
+- Artifact: Created `Dev/HubSpot-Make-Verfahren/PHP-cURL-CA-Bundle_2026-08-10.zip` containing the official curl/Mozilla `cacert.pem`, its upstream checksum file, and `INSTALLATION.txt` for `C:\PHP\php.ini`.
+- Verified: Downloaded from `https://curl.se/ca/cacert.pem`; local SHA-256 exactly matches the official checksum: `3FF344E30B9B1ED2971044EABB438A08F2E2245DDB5F8AB1A3AD8B63AB4EAF91`. ZIP has exactly three expected entries, 108408 bytes, SHA-256 `D7E8E1C9EAA02FA724E8B08BE4929E702C24794E570D549074BE7E8A7D7EF4C5`.
+- Next: Copy `cacert.pem` to `C:\PHP\extras\ssl\cacert.pem`, configure absolute `curl.cainfo` and `openssl.cafile` paths in the IIS-loaded `C:\PHP\php.ini`, restart IIS, and verify the request returns HTTP 405/422 instead of cURL 60.
