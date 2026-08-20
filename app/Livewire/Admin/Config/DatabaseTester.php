@@ -13,6 +13,11 @@ class DatabaseTester extends Component
     public string $errorMessage = '';
     public array $tables = [];
 
+    public bool $documentAccessOk = false;
+    public string $documentAccessError = '';
+    public string $documentRoot = '';
+    public array $documentAccessResults = [];
+
     /**
      * Wenn true, wird die Zeilenzahl per COUNT(*) exakt ermittelt (langsamer).
      * Wenn false, wird TABLE_ROWS aus information_schema verwendet (schneller, aber geschätzt).
@@ -195,6 +200,101 @@ class DatabaseTester extends Component
             $this->tables = $result;
         } catch (Throwable $e) {
             $this->errorMessage = $e->getMessage();
+        }
+    }
+
+    public function testDocumentAccess(): void
+    {
+        $this->reset([
+            'documentAccessOk',
+            'documentAccessError',
+            'documentRoot',
+            'documentAccessResults',
+        ]);
+
+        try {
+            $this->documentRoot = rtrim((string) config('uvs.root'), "/\\");
+            $directories = (array) config('uvs.document_dirs', []);
+
+            if ($this->documentRoot === '') {
+                throw new \RuntimeException('Der konfigurierte UVS-Stammpfad ist leer.');
+            }
+
+            foreach (['angebot' => 'Angebote', 'vertrag' => 'Vertraege'] as $type => $label) {
+                $relativeDirectory = trim((string) ($directories[$type] ?? ''), "/\\");
+                $absoluteDirectory = $relativeDirectory === ''
+                    ? ''
+                    : $this->documentRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativeDirectory);
+
+                $result = [
+                    'type' => $type,
+                    'label' => $label,
+                    'path' => $absoluteDirectory,
+                    'directory_exists' => $absoluteDirectory !== '' && is_dir($absoluteDirectory),
+                    'directory_readable' => false,
+                    'pdf_count' => 0,
+                    'readable_pdf_count' => 0,
+                    'sample_file' => null,
+                    'sample_size' => null,
+                    'pdf_header_valid' => false,
+                    'ok' => false,
+                    'message' => '',
+                ];
+
+                if (!$result['directory_exists']) {
+                    $result['message'] = 'Ordner nicht gefunden.';
+                    $this->documentAccessResults[$type] = $result;
+                    continue;
+                }
+
+                $result['directory_readable'] = is_readable($absoluteDirectory);
+                if (!$result['directory_readable']) {
+                    $result['message'] = 'Ordner ist fuer den PHP-/IIS-Prozess nicht lesbar.';
+                    $this->documentAccessResults[$type] = $result;
+                    continue;
+                }
+
+                $samplePath = null;
+                foreach (new \FilesystemIterator($absoluteDirectory, \FilesystemIterator::SKIP_DOTS) as $file) {
+                    if (!$file->isFile() || strtolower($file->getExtension()) !== 'pdf') {
+                        continue;
+                    }
+
+                    $result['pdf_count']++;
+                    if ($file->isReadable()) {
+                        $result['readable_pdf_count']++;
+                        $samplePath ??= $file->getPathname();
+                    }
+                }
+
+                if ($samplePath === null) {
+                    $result['message'] = $result['pdf_count'] > 0
+                        ? 'PDFs gefunden, aber keine Datei ist lesbar.'
+                        : 'Keine PDF-Datei im Ordner gefunden.';
+                    $this->documentAccessResults[$type] = $result;
+                    continue;
+                }
+
+                $sample = new \SplFileObject($samplePath, 'rb');
+                $header = $sample->fread(5);
+
+                $result['sample_file'] = basename($samplePath);
+                $result['sample_size'] = filesize($samplePath) ?: 0;
+                $result['pdf_header_valid'] = $header === '%PDF-';
+                $result['ok'] = $result['pdf_header_valid'];
+                $result['message'] = $result['ok']
+                    ? 'Dateizugriff und PDF-Dateikopf erfolgreich geprueft.'
+                    : 'Datei ist lesbar, besitzt aber keinen gueltigen PDF-Dateikopf.';
+
+                $this->documentAccessResults[$type] = $result;
+            }
+
+            $this->documentAccessOk = count($this->documentAccessResults) === 2
+                && collect($this->documentAccessResults)->every(
+                    static fn (array $result): bool => (bool) ($result['ok'] ?? false)
+                );
+        } catch (Throwable $e) {
+            $this->documentAccessError = $e->getMessage();
         }
     }
 

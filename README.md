@@ -18,4 +18,4 @@ Livewire 3
 
 
 
-© 2025  | Entwickelt von LMZ Media
+© 2025  | Entwickelt von LMZ Media 
