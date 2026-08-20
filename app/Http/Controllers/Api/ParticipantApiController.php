@@ -45,7 +45,19 @@ class ParticipantApiController extends BaseUvsController
             'katalog_kz'       => 'nullable|string|max:20',
             'qualifiz_art'     => 'required|string|max:20',
 
-            'hubspot_deal_id'  => 'nullable|string|max:64',
+            // Pflichtfeld. Dieser Endpunkt bildet Schritt 1 des HubSpot-Make-
+            // Verfahrens ab: "Die Person entsteht in HubSpot und kommt ins UVS" -
+            // der erste Deal existiert dort zu diesem Zeitpunkt bereits und wird
+            // laut Verfahrensbeschreibung immer mitgeschickt.
+            // Ohne die Deal-ID entsteht kein Vormerk-Mapping in x_hubspot
+            // (table_name = 'person'). Das erste Angebot geht dann ohne deal_id an
+            // Make, Make legt einen ZWEITEN Deal an und der urspruengliche Deal
+            // bleibt dauerhaft verwaist. Deshalb fail closed statt stiller Dublette.
+            'hubspot_deal_id'  => 'required|string|max:64',
+        ], [
+            'hubspot_deal_id.required' => 'hubspot_deal_id ist ein Pflichtfeld: Die Person wird aus '
+                . 'HubSpot uebernommen, die ID des dort bereits bestehenden Deals muss mitgeliefert '
+                . 'werden. Ohne sie kann das erste Angebot diesem Deal nicht zugeordnet werden.',
         ]);
     } catch (\Illuminate\Validation\ValidationException $e) {
         activity('uvs')
@@ -67,7 +79,7 @@ class ParticipantApiController extends BaseUvsController
     $now = Carbon::now()->format('Y/m/d');
     $institutId = (int) $data['institut_id'];
     $geburtDatum = Carbon::parse($data['geburt_datum'])->format('Y/m/d');
-    $hubspotDealId = trim((string)($data['hubspot_deal_id'] ?? ''));
+    $hubspotDealId = trim((string)$data['hubspot_deal_id']);
     $apiKey = $request->attributes->get('apiKey');
 
     try {
@@ -80,62 +92,146 @@ class ParticipantApiController extends BaseUvsController
             ->where('vorname', $data['vorname'])
             ->where('nachname', $data['nachname'])
             ->where('geburt_datum', $geburtDatum)
+            ->lockForUpdate()
             ->first();
 
-        if ($existingPerson) {
-            if ($hubspotDealId !== '') {
-                $pendingExists = $db->table('x_hubspot')
-                    ->where('person_uid', $existingPerson->uid)
-                    ->where('table_name', 'person')
-                    ->where('table_item_id', $hubspotDealId)
-                    ->where('hubspot_deal_id', $hubspotDealId)
-                    ->exists();
+        $dealOwners = $db->table('x_hubspot')
+            ->select('person_uid')
+            ->where('hubspot_deal_id', $hubspotDealId)
+            ->lockForUpdate()
+            ->get();
 
-                if (!$pendingExists) {
-                    $db->table('x_hubspot')->insert([
-                        'person_uid' => $existingPerson->uid,
-                        'table_name' => 'person',
-                        'table_item_id' => $hubspotDealId,
-                        'hubspot_deal_id' => $hubspotDealId,
-                    ]);
-                }
+        $expectedPersonUid = isset($existingPerson->uid)
+            ? trim((string)$existingPerson->uid)
+            : '';
+        $dealOwnedByAnotherPerson = false;
 
-                $db->commit();
+        foreach ($dealOwners as $dealOwner) {
+            $ownerPersonUid = trim((string)($dealOwner->person_uid ?? ''));
 
-                activity('uvs')
-                    ->causedBy($request->user())
-                    ->withProperties([
-                        'event'           => 'participant.pending_hubspot_deal_saved',
-                        'institut_id'     => $institutId,
-                        'person_id'       => $existingPerson->person_id,
-                        'hubspot_deal_id' => $hubspotDealId,
-                        'api_key_id'      => optional($apiKey)->id,
-                    ])
-                    ->log('Pending HubSpot deal mapping saved for existing participant');
-
-                return response()->json([
-                    'message' => 'HubSpot Deal-ID als Pending-Mapping gespeichert',
-                    'person_id' => $existingPerson->person_id,
-                    'hubspot_deal_id' => $hubspotDealId,
-                ]);
+            if (
+                $expectedPersonUid === ''
+                || $ownerPersonUid === ''
+                || $ownerPersonUid !== $expectedPersonUid
+            ) {
+                $dealOwnedByAnotherPerson = true;
+                break;
             }
+        }
 
+        if ($dealOwnedByAnotherPerson) {
             $db->rollBack();
 
             activity('uvs')
                 ->causedBy($request->user())
                 ->withProperties([
-                    'event'        => 'participant.duplicate',
-                    'institut_id'  => $institutId,
-                    'vorname'      => $data['vorname'],
-                    'nachname'     => $data['nachname'],
-                    'geburt_datum' => $geburtDatum,
-                    'email_masked' => $this->maskEmail($data['email_priv']),
-                    'api_key_id'   => optional($apiKey)->id,
+                    'event'           => 'participant.hubspot_deal_owner_conflict',
+                    'institut_id'     => $institutId,
+                    'person_id'       => $existingPerson->person_id ?? null,
+                    'hubspot_deal_id' => $hubspotDealId,
+                    'api_key_id'      => optional($apiKey)->id,
                 ])
-                ->log('Duplicate participant detected');
+                ->log('HubSpot deal ID already belongs to another participant');
 
-            return response()->json(['message' => 'Duplicate person found'], 409);
+            return response()->json([
+                'message' => 'Die uebergebene hubspot_deal_id ist bereits einer anderen Person zugeordnet.',
+                'person_id' => $existingPerson->person_id ?? null,
+                'hubspot_deal_id' => $hubspotDealId,
+            ], 409);
+        }
+
+        if ($existingPerson) {
+            $existingMappings = $db->table('x_hubspot')
+                ->select('table_name', 'table_item_id', 'hubspot_deal_id')
+                ->where('person_uid', $existingPerson->uid)
+                ->lockForUpdate()
+                ->get();
+
+            $hasAnyDealMapping = false;
+            $hasSameDealMapping = false;
+            $hasConflictingPendingDeal = false;
+
+            foreach ($existingMappings as $existingMapping) {
+                $mappedDealId = trim((string)($existingMapping->hubspot_deal_id ?? ''));
+
+                if ($mappedDealId === '') {
+                    continue;
+                }
+
+                $hasAnyDealMapping = true;
+
+                if ($mappedDealId === $hubspotDealId) {
+                    $hasSameDealMapping = true;
+                }
+
+                if (
+                    strtolower(trim((string)($existingMapping->table_name ?? ''))) === 'person'
+                    && $mappedDealId !== $hubspotDealId
+                ) {
+                    $hasConflictingPendingDeal = true;
+                }
+            }
+
+            $mappingConflict = $hasConflictingPendingDeal
+                || ($hasAnyDealMapping && !$hasSameDealMapping);
+
+            if ($mappingConflict) {
+                $db->rollBack();
+
+                activity('uvs')
+                    ->causedBy($request->user())
+                    ->withProperties([
+                        'event'           => 'participant.hubspot_deal_conflict',
+                        'institut_id'     => $institutId,
+                        'person_id'       => $existingPerson->person_id,
+                        'hubspot_deal_id' => $hubspotDealId,
+                        'api_key_id'      => optional($apiKey)->id,
+                    ])
+                    ->log('Conflicting HubSpot deal ID rejected for existing participant');
+
+                return response()->json([
+                    'message' => 'Fuer diese Person besteht bereits eine andere HubSpot-Deal-Zuordnung. '
+                        . 'Die uebergebene hubspot_deal_id wurde nicht gespeichert.',
+                    'person_id' => $existingPerson->person_id,
+                    'hubspot_deal_id' => $hubspotDealId,
+                ], 409);
+            }
+
+            $mappingCreated = !$hasSameDealMapping;
+
+            if ($mappingCreated) {
+                $db->table('x_hubspot')->insert([
+                    'person_uid' => $existingPerson->uid,
+                    'table_name' => 'person',
+                    'table_item_id' => $hubspotDealId,
+                    'hubspot_deal_id' => $hubspotDealId,
+                ]);
+            }
+
+            $db->commit();
+
+            activity('uvs')
+                ->causedBy($request->user())
+                ->withProperties([
+                    'event' => $mappingCreated
+                        ? 'participant.pending_hubspot_deal_saved'
+                        : 'participant.hubspot_deal_confirmed',
+                    'institut_id'     => $institutId,
+                    'person_id'       => $existingPerson->person_id,
+                    'hubspot_deal_id' => $hubspotDealId,
+                    'api_key_id'      => optional($apiKey)->id,
+                ])
+                ->log($mappingCreated
+                    ? 'Pending HubSpot deal mapping saved for existing participant'
+                    : 'Existing HubSpot deal mapping confirmed for participant');
+
+            return response()->json([
+                'message' => $mappingCreated
+                    ? 'HubSpot Deal-ID als Pending-Mapping gespeichert'
+                    : 'HubSpot Deal-ID fuer diese Person bereits gespeichert',
+                'person_id' => $existingPerson->person_id,
+                'hubspot_deal_id' => $hubspotDealId,
+            ]);
         }
 
         $maxPersonNr = $db->table('person')
@@ -170,14 +266,12 @@ class ParticipantApiController extends BaseUvsController
             'referrer'      => optional($apiKey)->name,
         ]);
 
-        if ($hubspotDealId !== '') {
-            $db->table('x_hubspot')->insert([
-                'person_uid'      => $personUid,
-                'table_name'      => 'person',
-                'table_item_id'   => $hubspotDealId,
-                'hubspot_deal_id' => $hubspotDealId,
-            ]);
-        }
+        $db->table('x_hubspot')->insert([
+            'person_uid'      => $personUid,
+            'table_name'      => 'person',
+            'table_item_id'   => $hubspotDealId,
+            'hubspot_deal_id' => $hubspotDealId,
+        ]);
 
         $interessentNr = $personNr . '00';
         $interessentId = $institutId . '-' . $interessentNr;
@@ -213,7 +307,7 @@ class ParticipantApiController extends BaseUvsController
                 'person_id'       => $personId,
                 'person_uid'      => $personUid,
                 'interessent_id'  => $interessentId,
-                'has_deal_mapping'=> $hubspotDealId !== '',
+                'has_deal_mapping'=> true,
                 'email_masked'    => $this->maskEmail($data['email_priv']),
                 'telefon1_suffix' => $this->suffix($data['telefon1']),
                 'api_key_id'      => optional($apiKey)->id,
@@ -225,11 +319,13 @@ class ParticipantApiController extends BaseUvsController
             'person_uid'     => $personUid,
             'person_id'      => $personId,
             'interessent_id' => $interessentId,
-            'hubspot_deal_id'=> $hubspotDealId !== '' ? $hubspotDealId : null,
+            'hubspot_deal_id'=> $hubspotDealId,
         ], 201);
 
     } catch (\Throwable $e) {
-        $db->rollBack();
+        if ($db->transactionLevel() > 0) {
+            $db->rollBack();
+        }
 
         activity('uvs')
             ->causedBy($request->user())
